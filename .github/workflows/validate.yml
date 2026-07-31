@@ -1,0 +1,51 @@
+name: Validation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    # Détecte les ruptures d'API de Home Assistant sans attendre un push
+    - cron: "0 4 * * 1"
+
+jobs:
+  hassfest:
+    name: hassfest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: home-assistant/actions/hassfest@master
+
+  hacs:
+    name: HACS
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hacs/action@main
+        with:
+          category: integration
+
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pytest pytest-asyncio pyflakes homeassistant hassil home-assistant-intents
+      - name: Noms non définis
+        run: python -m pyflakes custom_components/smartwake/*.py | (! grep -i "undefined")
+      - name: Import de tous les modules sous le vrai Home Assistant
+        run: |
+          python - <<'SCRIPT'
+          import importlib
+          for m in ("const","entity","learning","ai","assist","coordinator",
+                    "config_flow","switch","sensor","binary_sensor",
+                    "number","select","time","button"):
+              importlib.import_module(f"custom_components.smartwake.{m}")
+          print("tous les modules importent")
+          SCRIPT
+      - name: Tests unitaires
+        run: pytest tests/ -q

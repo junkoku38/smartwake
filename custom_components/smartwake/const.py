@@ -24,6 +24,10 @@ def integration_version() -> str:
 
 DOMAIN = "smartwake"
 
+# Version du schéma des config entries. Partagée entre le config flow et
+# async_migrate_entry pour qu'elles ne puissent pas divergerne.
+SCHEMA_VERSION = 3
+
 
 def slugify(title: str) -> str:
     """Slugify un nom pour générer des entity_ids valides.
@@ -145,7 +149,10 @@ DEFAULT_VOLUME_DUREE = 5
 DEFAULT_BRIGHTNESS_MAX = 200
 DEFAULT_DUREE_PROGRESSIVE = 20
 DEFAULT_PLAYLIST = "FV:2/7"
-DEFAULT_NOTIFY_DEVICE = "notify.mobile_app_sm_g991u1"
+# Aucun destinataire par défaut : la valeur précédente désignait un téléphone
+# précis, si bien qu'une installation sans appareil détecté tentait d'envoyer
+# ses notifications à un service inexistant.
+DEFAULT_NOTIFY_DEVICE = ""
 DEFAULT_SNOOZE_DUREE = 5
 DEFAULT_SNOOZE_MAX = 2
 DEFAULT_ESCALADE_MIN = 5

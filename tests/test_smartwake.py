@@ -1,10 +1,12 @@
 """Tests unitaires pour SmartWAKE — coordinator, ai, config_flow.
 
-Utilise le mock HA de /tmp/hatest pour valider la logique sans HA réel.
+Utilise le mock Home Assistant de tests/mock_ha/, versionné dans le dépôt,
+pour valider la logique sans installation complète de Home Assistant.
 """
 
 import asyncio
 import sys
+from pathlib import Path
 from datetime import datetime, timedelta
 from datetime import time as dtime
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -17,8 +19,10 @@ async def _fast_sleep(sec):
     await _orig_sleep(0)
 asyncio.sleep = _fast_sleep
 
-# Mock HA minimal
-sys.path.insert(0, "/tmp/hatest")
+# Mock Home Assistant minimal, versionné dans le dépôt.
+# Il était auparavant attendu dans /tmp/hatest, chemin absolu propre à une seule
+# machine : la suite de tests n'était donc reproductible nulle part ailleurs.
+sys.path.insert(0, str(Path(__file__).parent / "mock_ha"))
 
 
 def _stub_number_module():
@@ -1143,3 +1147,91 @@ def test_ecart_lever_gere_le_passage_minuit():
 
     reel3 = datetime(2026, 7, 15, 7, 12)
     assert LearningManager._ecart_minutes("07:00", reel3) == pytest.approx(12)
+
+
+# ── Régression : migration des config entries ──────────────────
+
+def test_migration_declaree():
+    """Régression : le config flow déclare VERSION = 3 depuis la 2.5.0, contre
+    2 auparavant. Sans async_migrate_entry, Home Assistant refuse de charger
+    toute entrée créée avant cette version (« Migration handler not found ») et
+    l'intégration ne démarre pas du tout.
+    """
+    import custom_components.smartwake as pkg
+
+    assert hasattr(pkg, "async_migrate_entry"), (
+        "async_migrate_entry est obligatoire dès que VERSION a été incrémentée"
+    )
+
+
+def test_version_de_schema_unique():
+    """La version doit être partagée pour que le config flow et la migration
+    ne puissent pas diverger."""
+    import ast
+
+    from custom_components.smartwake.const import SCHEMA_VERSION
+
+    src = open("custom_components/smartwake/config_flow.py", encoding="utf-8").read()
+    for node in ast.walk(ast.parse(src)):
+        if isinstance(node, ast.Assign):
+            for t in node.targets:
+                if isinstance(t, ast.Name) and t.id == "VERSION":
+                    assert isinstance(node.value, ast.Name), (
+                        "VERSION doit référencer SCHEMA_VERSION, pas un littéral"
+                    )
+                    assert node.value.id == "SCHEMA_VERSION"
+    assert isinstance(SCHEMA_VERSION, int) and SCHEMA_VERSION >= 3
+
+
+@pytest.mark.asyncio
+async def test_migration_releve_la_version(coordinator):
+    """Une entrée en schéma 2 doit être relevée sans perte de données."""
+    from custom_components.smartwake import async_migrate_entry
+    from custom_components.smartwake.const import SCHEMA_VERSION
+
+    entry = coordinator.entry
+    entry.version = 2
+    entry.minor_version = 1
+    donnees = dict(entry.data)
+
+    maj = {}
+
+    def _update(e, **kw):
+        maj.update(kw)
+        if "version" in kw:
+            e.version = kw["version"]
+        if "data" in kw:
+            e.data = kw["data"]
+
+    coordinator.hass.config_entries.async_update_entry = _update
+
+    assert await async_migrate_entry(coordinator.hass, entry) is True
+    assert maj.get("version") == SCHEMA_VERSION
+    assert entry.data == donnees, "la migration ne doit rien perdre"
+
+
+@pytest.mark.asyncio
+async def test_migration_refuse_un_schema_plus_recent(coordinator):
+    """Une entrée écrite par une version future ne doit pas être chargée."""
+    from custom_components.smartwake import async_migrate_entry
+    from custom_components.smartwake.const import SCHEMA_VERSION
+
+    coordinator.entry.version = SCHEMA_VERSION + 1
+    assert await async_migrate_entry(coordinator.hass, coordinator.entry) is False
+
+
+# ── Régression : pas de valeur personnelle codée en dur ────────
+
+def test_aucun_destinataire_code_en_dur():
+    """Régression : DEFAULT_NOTIFY_DEVICE désignait un téléphone précis
+    (notify.mobile_app_sm_g991u1). Une installation sans appareil détecté
+    envoyait ses notifications à un service inexistant."""
+    import re
+
+    from custom_components.smartwake import const
+
+    assert const.DEFAULT_NOTIFY_DEVICE == ""
+    src = open("custom_components/smartwake/const.py", encoding="utf-8").read()
+    assert not re.search(r"mobile_app_[a-z0-9_]+", src), (
+        "aucun identifiant d'appareil personnel ne doit subsister"
+    )

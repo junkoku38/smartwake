@@ -21,6 +21,7 @@ from .const import (
     SERVICE_STOP,
     SERVICE_BILAN_HEBDO,
     integration_version,
+    SCHEMA_VERSION,
 )
 from .coordinator import ReveilCoordinator
 
@@ -88,12 +89,50 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     hass.services.async_register(DOMAIN, SERVICE_RESET, _handle_reset, schema=SERVICE_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_BILAN_HEBDO, _handle_bilan_hebdo, schema=SERVICE_SCHEMA)
 
-    # Enregistrer les tools Assist (LLM Tool Calling) — non bloquant
+    # Enregistrer l'API Assist (LLM Tool Calling) — non bloquant.
+    # L'échec était journalisé en debug, ce qui a masqué pendant longtemps le
+    # fait que l'API utilisée n'existait pas.
     try:
         from .assist import async_setup_assist_tools
         await async_setup_assist_tools(hass)
     except Exception as exc:
-        _LOGGER.debug("Assist tools non disponibles: %s", exc)
+        _LOGGER.warning(
+            "API Assist SmartWAKE non enregistrée, le pilotage vocal sera "
+            "indisponible : %s", exc,
+        )
+
+    return True
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Migre une entrée créée par une version antérieure.
+
+    Le config flow déclare VERSION = 3 depuis la 2.5.0, contre 2 auparavant.
+    Sans ce gestionnaire, Home Assistant refuse de charger toute entrée créée
+    avant cette version : « Migration handler not found », et l'intégration ne
+    démarre pas du tout (config_entries.py, async_migrate_helper).
+
+    Le schéma n'a jamais perdu ni renommé de clé — les versions successives
+    n'ont fait qu'en ajouter — et chaque lecture applique une valeur par
+    défaut. Relever la version suffit donc, sans transformation des données.
+    """
+    if entry.version > SCHEMA_VERSION:
+        # Entrée écrite par une version plus récente : on ne sait pas la lire
+        _LOGGER.error(
+            "L'entrée '%s' provient d'une version plus récente de SmartWAKE "
+            "(schéma %s > %s). Mettez l'intégration à jour.",
+            entry.title, entry.version, SCHEMA_VERSION,
+        )
+        return False
+
+    if entry.version < SCHEMA_VERSION:
+        _LOGGER.info(
+            "Migration de '%s' du schéma %s vers %s",
+            entry.title, entry.version, SCHEMA_VERSION,
+        )
+        hass.config_entries.async_update_entry(
+            entry, data={**entry.data}, version=SCHEMA_VERSION, minor_version=0
+        )
 
     return True
 

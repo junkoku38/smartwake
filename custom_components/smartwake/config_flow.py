@@ -56,6 +56,7 @@ from .const import (
     CONF_MOUVEMENT_SDB,
     CONF_MOUVEMENT_STOP,
     CONF_MEDIA_PLAYER,
+    SCHEMA_VERSION,
     CONF_MODE_HEURE,
     CONF_MODE_VACANCES,
     CONF_MODE_VACANCES_ENTITY,
@@ -260,7 +261,7 @@ async def _auto_detect_entities(hass: HomeAssistant) -> dict[str, str | None]:
 class SmartWAKEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Config flow simplifié : 1 étape."""
 
-    VERSION = 3
+    VERSION = SCHEMA_VERSION
     MINOR_VERSION = 0
 
     def __init__(self) -> None:
