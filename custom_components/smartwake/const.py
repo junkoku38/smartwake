@@ -1,6 +1,26 @@
 """Constantes pour l'intégration SmartWAKE."""
 
+import unicodedata
+
 DOMAIN = "smartwake"
+
+
+def slugify(title: str) -> str:
+    """Slugify un nom pour générer des entity_ids valides.
+
+    Convertit les accents, espaces et caractères spéciaux en [a-z0-9_].
+    Ex: 'Réveil Élève' -> 'reveil_eleve'
+    """
+    normalized = unicodedata.normalize("NFKD", title)
+    ascii_str = normalized.encode("ascii", "ignore").decode("ascii")
+    slug = ""
+    for c in ascii_str.lower().strip():
+        if c.isalnum():
+            slug += c
+        elif c in (" ", "-", ".", ",", "_"):
+            slug += "_"
+    slug = "_".join(part for part in slug.split("_") if part)
+    return slug[:30] if slug else "reveil"
 
 # ── Clés config flow ──────────────────────────────────────────
 CONF_HEURE = "heure"

@@ -16,7 +16,7 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.llm import Tool
 
-from .const import DOMAIN
+from .const import DOMAIN, slugify
 from .coordinator import ReveilCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -132,7 +132,7 @@ async def async_setup_assist_tools(hass: HomeAssistant) -> None:
 def _find_coordinator(hass: HomeAssistant, name: str) -> ReveilCoordinator | None:
     """Trouve un coordinator par nom de réveil."""
     for coord in hass.data.get(DOMAIN, {}).values():
-        if coord.entry.title.lower() == name.lower().replace(" ", "_"):
+        if slugify(coord.entry.title) == slugify(name):
             return coord
         if coord.entry.title.lower() == name.lower():
             return coord

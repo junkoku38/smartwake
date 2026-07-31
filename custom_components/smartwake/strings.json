@@ -18,7 +18,7 @@
       "media_required": "Sélectionnez un lecteur de musique si la musique est activée",
       "light_required": "Sélectionnez une lumière si la lumière progressive est activée",
       "jours_perso_required": "Sélectionnez au moins un jour si mode Personnalisé",
-      "invalid_name": "Le nom doit contenir uniquement des lettres, chiffres, tirets ou tirets bas (1-30 caractères)"
+      "invalid_name": "Le nom est trop long (50 caractères max)"
     },
     "abort": {
       "already_configured": "Un réveil avec ce nom existe déjà"

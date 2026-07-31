@@ -96,6 +96,7 @@ from .const import (
     DEFAULT_VOLUME_INITIAL,
     JOURS_NUM,
     JOURS_OPTIONS,
+    slugify,
     STATUT_DONE,
     STATUT_IDLE,
     STATUT_INACTIF,
@@ -394,7 +395,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
             self.hass.bus.async_fire(event_type, {
                 "name": self.entry.title,
                 "entry_id": self.entry.entry_id,
-                "entity_id": f"switch.{self.entry.title.lower().replace(' ', '_')}_actif",
+                "entity_id": f"switch.{slugify(self.entry.title)}_actif",
                 **kwargs,
             })
         except Exception as exc:

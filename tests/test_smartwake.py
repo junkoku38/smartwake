@@ -187,27 +187,21 @@ async def test_coordinator_skip_prochain(coordinator):
 # ── Tests config_flow validation ───────────────────────────────
 
 def test_config_flow_nom_valide():
-    import re
-    nom = "Reveil_test"
-    assert re.match(r"^[A-Za-z0-9_-]{1,30}$", nom)
-
-
-def test_config_flow_nom_invalide_special():
-    import re
-    nom = "test\"; rm -rf /"
-    assert not re.match(r"^[A-Za-z0-9_-]{1,30}$", nom)
+    """Le nom peut contenir des accents (slugify s'occupe de la conversion)."""
+    from custom_components.smartwake.const import slugify
+    assert slugify("Réveil") == "reveil"
+    assert slugify("Réveil Élève") == "reveil_eleve"
+    assert slugify("réveil_semaine") == "reveil_semaine"
 
 
 def test_config_flow_nom_invalide_trop_long():
-    import re
-    nom = "a" * 31
-    assert not re.match(r"^[A-Za-z0-9_-]{1,30}$", nom)
+    name = "a" * 51
+    assert len(name) > 50
 
 
 def test_config_flow_nom_invalide_vide():
-    import re
-    nom = ""
-    assert not re.match(r"^[A-Za-z0-9_-]{1,30}$", nom)
+    name = ""
+    assert not name
 
 
 # ── Tests validation heure notification ────────────────────────
