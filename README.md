@@ -3,8 +3,10 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Home%20Assistant-2024.1%2B-41BDF5?logo=home-assistant&logoColor=white" />
   <img src="https://img.shields.io/badge/HACS-Custom-41BDF5?logo=home-assistant-community-store&logoColor=white" />
-  <img src="https://img.shields.io/badge/version-2.1.0-blue" />
+  <img src="https://img.shields.io/badge/version-2.2.0-blue" />
   <img src="https://img.shields.io/badge/python-3.12%2B-yellow" />
+  <img src="https://img.shields.io/badge/security-bandit%200%20finding-green" />
+  <img src="https://img.shields.io/badge/security-semgrep%200%20finding-green" />
 </p>
 
 Un réveil domotique complet qui ne se contente pas de sonner : il **prépare la maison** au réveil (chauffage, lumière progressive, musique, volets, café), s'adapte au **calendrier** (jours fériés, vacances scolaires, vacances) et à la **présence réelle** des occupants.
@@ -53,6 +55,21 @@ Un réveil domotique complet qui ne se contente pas de sonner : il **prépare la
 | `jour_ferie` | Jour férié (via capteur workday) |
 | `weekend` | Samedi ou dimanche |
 | `vacances_scolaires` | Vacances scolaires en cours (via calendar entity) |
+
+### AI Task (HA ≥ 2025.8, optionnel)
+- **Briefing matinal IA** : rédige un briefing naturel (météo, agenda, trajet, batterie) au lieu d'un TTS robotique
+- **Musique adaptative** : l'IA choisit la playlist selon la météo et le contexte
+- **Suggestion d'heure du soir** : notification actionnable Accepter/Refuser (l'IA propose, l'utilisateur valide)
+- **Bilan de sommeil hebdomadaire** : synthèse de la semaine + recommandations (service `smartwake.bilan_hebdo`)
+- **Vérification lever caméra** : 10 min après le Stop, l'IA vérifie si vous êtes levé → escalade si encore au lit
+
+> ⚠️ L'IA ne déclenche **jamais** la sonnerie. Fallback automatique si indisponible.
+
+### Robustesse
+- **Watchdog** : vérifie l'armement au démarrage HA
+- **Logbook** : journalise les événements (activation, déclenchement, snooze, stop, escalade)
+- **Notification actions** : capte `REVEIL_SNOOZE` / `REVEIL_STOP` depuis l'app mobile
+- **Dashboard auto** : carte Lovelace injectée automatiquement dans Overview
 
 ## Installation
 
@@ -126,6 +143,7 @@ Tous les paramètres sont éditables ensuite via *Configurer* sur l'intégration
 | `smartwake.stop` | Arrête immédiatement le cycle |
 | `smartwake.sauter_prochain` | Saute le prochain réveil |
 | `smartwake.reset` | Remet à zéro l'état |
+| `smartwake.bilan_hebdo` | Génère et envoie un bilan de sommeil hebdomadaire via AI Task |
 
 ## Intégrations recommandées
 
@@ -137,7 +155,28 @@ Tous les paramètres sont éditables ensuite via *Configurer* sur l'intégration
 | TTS briefing | Piper (local), Google TTS, Assist |
 | Capteur de sommeil | Withings, Sleep as Android (MQTT) |
 | Boutons physiques | Zigbee (IKEA/Aqara), tag NFC |
+| AI Task | Ollama (local), Anthropic, Google, OpenAI |
 | Interface | Carte Mushroom, custom:alarm-clock-card |
+
+## Sécurité
+
+Le composant a été audité (revue de code défensive + SAST).
+
+### Scanners
+- **Bandit** : 0 finding
+- **Semgrep** : 0 finding
+- **Secrets** : 0 finding (aucun token/credential dans le code)
+
+### Mesures de sécurité implémentées
+- **Contrôle d'accès strict** : les services utilisent `entity_registry` (match par `config_entry_id`, pas par sous-chaîne)
+- **Validation des entrées** : nom du réveil validé par regex `^[A-Za-z0-9_-]{1,30}$`, heure validée par regex `^\d{1,2}:\d{2}$` + bornes
+- **Anti-injection de prompt IA** : séparation des instructions et des données contextuelles dans les prompts
+- **Principe de moindre privilège** : l'entité AI Task ne doit pas avoir accès aux services HA (documenté dans le config flow)
+- **Logbook sans fuite** : les événements journalisés ne contiennent pas de données sensibles (pas de détails de RDV, pas d'heures exactes)
+- **L'IA ne déclenche jamais la sonnerie** : la sonnerie reste un `time` trigger déterministe
+
+### Signaler une vulnérabilité
+Ouvrez une issue sur https://github.com/junkoku38/smartwake/issues ou contactez le codeowner.
 
 ## Licence
 
