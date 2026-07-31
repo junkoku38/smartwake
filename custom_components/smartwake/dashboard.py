@@ -27,6 +27,7 @@ def _build_card(entry: ConfigEntry) -> dict[str, Any]:
     return {
         "type": "vertical-stack",
         "cards": [
+            # ── En-tête : statut + prochain réveil ──
             {
                 "type": "entities",
                 "title": f"⏰ {entry.title}",
@@ -34,27 +35,26 @@ def _build_card(entry: ConfigEntry) -> dict[str, Any]:
                 "entities": [
                     {"entity": f"switch.{nom}_actif", "name": "Activé"},
                     {"entity": f"time.{nom}_heure", "name": "Heure"},
-                    {"type": "divider"},
                     {"entity": f"select.{nom}_jours", "name": "Jours"},
-                    {"type": "divider"},
-                    {"entity": f"number.{nom}_snooze_min", "name": "Snooze (min)"},
-                    {"entity": f"number.{nom}_max_snooze", "name": "Max snooze"},
-                    {"entity": f"number.{nom}_pre_chauffage_min", "name": "Pré-chauffage (min)"},
-                    {"entity": f"number.{nom}_aube_min", "name": "Aube (min)"},
-                    {"entity": f"number.{nom}_volume_final", "name": "Volume final"},
-                    {"entity": f"number.{nom}_duree_eclairage_min", "name": "Durée éclairage (min)"},
-                    {"entity": f"number.{nom}_luminosite_max", "name": "Luminosité max"},
-                    {"entity": f"number.{nom}_escalade_min", "name": "Escalade (min)"},
-                    {"type": "divider"},
+                    {"entity": f"sensor.{nom}_statut", "name": "État"},
+                    {"entity": f"sensor.{nom}_prochain_reveil", "name": "Prochain réveil"},
+                ],
+            },
+            # ── Sondes contextuelles ──
+            {
+                "type": "entities",
+                "title": "Contexte",
+                "show_header_toggle": False,
+                "icon": "mdi:calendar-alert",
+                "entities": [
                     {"entity": f"binary_sensor.{nom}_sonne_aujourd_hui", "name": "Sonne aujourd'hui"},
                     {"entity": f"binary_sensor.{nom}_weekend", "name": "Weekend"},
                     {"entity": f"binary_sensor.{nom}_jour_ferie", "name": "Jour férié"},
                     {"entity": f"binary_sensor.{nom}_vacances_scolaires", "name": "Vacances scolaires"},
-                    {"entity": f"sensor.{nom}_statut", "name": "État"},
-                    {"entity": f"sensor.{nom}_prochain_reveil", "name": "Prochain réveil"},
-                    {"entity": f"sensor.{nom}_snooze_count", "name": "Snooze utilisés"},
+                    {"entity": f"binary_sensor.{nom}_reveil_en_cours", "name": "Réveil en cours"},
                 ],
             },
+            # ── Boutons d'action ──
             {
                 "type": "horizontal-stack",
                 "cards": [
@@ -108,6 +108,39 @@ def _build_card(entry: ConfigEntry) -> dict[str, Any]:
                             "target": {"entity_id": f"switch.{nom}_actif"},
                         },
                     },
+                ],
+            },
+            # ── Réglages ──
+            {
+                "type": "entities",
+                "title": "Réglages",
+                "show_header_toggle": False,
+                "icon": "mdi:cog",
+                "entities": [
+                    {"entity": f"number.{nom}_snooze_min", "name": "Snooze (min)"},
+                    {"entity": f"number.{nom}_max_snooze", "name": "Max snooze"},
+                    {"entity": f"number.{nom}_pre_chauffage_min", "name": "Pré-chauffage (min)"},
+                    {"entity": f"number.{nom}_aube_min", "name": "Aube (min)"},
+                    {"entity": f"number.{nom}_volume_final", "name": "Volume final"},
+                    {"entity": f"number.{nom}_volume_initial", "name": "Volume initial"},
+                    {"entity": f"number.{nom}_duree_eclairage_min", "name": "Durée éclairage (min)"},
+                    {"entity": f"number.{nom}_luminosite_max", "name": "Luminosité max"},
+                    {"entity": f"number.{nom}_escalade_min", "name": "Escalade (min)"},
+                    {"entity": f"number.{nom}_cafe_avant_min", "name": "Café avant (min)"},
+                ],
+            },
+            # ── Statistiques ──
+            {
+                "type": "entities",
+                "title": "Statistiques",
+                "show_header_toggle": False,
+                "icon": "mdi:chart-line",
+                "entities": [
+                    {"entity": f"sensor.{nom}_total_declenchements", "name": "Déclenchements (total)"},
+                    {"entity": f"sensor.{nom}_total_snoozes", "name": "Snoozes (total)"},
+                    {"entity": f"sensor.{nom}_total_stops", "name": "Stops (total)"},
+                    {"entity": f"sensor.{nom}_dernier_reveil", "name": "Dernier réveil"},
+                    {"entity": f"sensor.{nom}_snooze_count", "name": "Snooze utilisés (cycle)"},
                 ],
             },
         ],
