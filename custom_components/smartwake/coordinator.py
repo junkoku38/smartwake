@@ -32,6 +32,7 @@ from .const import (
     CONF_CAFETIERE_MIN,
     CONF_CHAUFFE_EAU,
     CONF_DUREE_PROGRESSIVE,
+    CONF_ESCALADE_INTELLIGENTE,
     CONF_ESCALADE_MIN,
     CONF_HEURE,
     CONF_IGNORER_FERIES,
@@ -66,6 +67,8 @@ from .const import (
     CONF_PRECHAUFFE_MIN,
     CONF_PRESENCE,
     CONF_RADIATEUR,
+    CONF_SCENE_MATIN_ENTITIES,
+    CONF_SCENES_MATIN,
     CONF_SKIP_PROCHAIN,
     CONF_SNOOZE_DUREE,
     CONF_SNOOZE_MAX,
@@ -748,6 +751,9 @@ class ReveilCoordinator(DataUpdateCoordinator):
 
     async def _executer_cycle(self) -> None:
         """Cycle de réveil complet avec contrôle d'erreurs."""
+        cfg = self.entry.data
+        erreurs = []
+
         self._reveil_en_cours = True
         self._snooze_count = 0
         self._statut = STATUT_RINGING
@@ -755,9 +761,6 @@ class ReveilCoordinator(DataUpdateCoordinator):
         self._fire_event("smartwake_triggered", heure=cfg.get(CONF_HEURE, "07:00"), prochain=self._prochain.isoformat() if self._prochain else None)
         self._increment_stat("total_declenchements")
         self._notify()
-
-        cfg = self.entry.data
-        erreurs = []
 
         # Musique + volume progressif (avec IA adaptative si activée)
         if cfg.get(CONF_MUSIQUE_ACTIVEE) and cfg.get(CONF_MEDIA_PLAYER):

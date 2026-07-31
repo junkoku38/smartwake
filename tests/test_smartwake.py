@@ -20,6 +20,64 @@ asyncio.sleep = _fast_sleep
 sys.path.insert(0, "/tmp/hatest")
 
 
+def _stub_number_module():
+    """Le mock HA ne fournit pas homeassistant.components.number.
+
+    On installe un substitut minimal afin de pouvoir tester
+    ReveilNumber.async_set_native_value (cf. régression self.entry).
+    """
+    import types
+
+    if "homeassistant.components.number" in sys.modules:
+        return
+
+    mod = types.ModuleType("homeassistant.components.number")
+
+    class NumberMode:
+        SLIDER = "slider"
+        BOX = "box"
+
+    class NumberEntityDescription:
+        def __init__(self, key, name=None, icon=None, native_min_value=None,
+                     native_max_value=None, native_step=None, **kw):
+            self.key = key
+            self.name = name
+            self.icon = icon
+            self.native_min_value = native_min_value
+            self.native_max_value = native_max_value
+            self.native_step = native_step
+
+    class NumberEntity:
+        entity_description = None
+        hass = None
+
+        @property
+        def native_step(self):
+            return getattr(self.entity_description, "native_step", None)
+
+        def async_write_ha_state(self):
+            pass
+
+        def async_on_remove(self, fn):
+            pass
+
+    mod.NumberEntity = NumberEntity
+    mod.NumberEntityDescription = NumberEntityDescription
+    mod.NumberMode = NumberMode
+    sys.modules["homeassistant.components.number"] = mod
+
+    if "homeassistant.helpers.entity_platform" not in sys.modules:
+        plat = types.ModuleType("homeassistant.helpers.entity_platform")
+        plat.AddEntitiesCallback = object
+        sys.modules["homeassistant.helpers.entity_platform"] = plat
+
+    # entity.py importe DeviceInfo, absent du mock
+    from homeassistant.helpers import device_registry as dr
+
+    if not hasattr(dr, "DeviceInfo"):
+        dr.DeviceInfo = dict
+
+
 # ── Tests _jours_actifs et _parse_heure ────────────────────────
 
 def test_jours_actifs_tous():
@@ -287,3 +345,89 @@ async def test_ai_bilan_hebdo_desactive():
     cfg = {"ai_bilan_hebdo": False}
     result = await generate_weekly_report(hass, cfg, 0, "")
     assert result is None
+
+# ── Régression : cycle de réveil ───────────────────────────────
+
+@pytest.mark.asyncio
+async def test_executer_cycle_ne_leve_pas_unbound_local(coordinator):
+    """Régression : cfg était utilisé avant son affectation dans
+    _executer_cycle, ce qui levait UnboundLocalError et interrompait le
+    réveil juste après le passage au statut ringing."""
+    await coordinator.set_actif(True)
+    await coordinator._executer_cycle()
+    assert coordinator.statut == "ringing"
+
+
+@pytest.mark.asyncio
+async def test_executer_cycle_incremente_les_stats(coordinator):
+    """Le compteur de déclenchements doit être incrémenté : il était
+    inatteignable à cause de l'UnboundLocalError. _stats est créé
+    paresseusement par _increment_stat."""
+    await coordinator.set_actif(True)
+    await coordinator._executer_cycle()
+    assert coordinator._stats["total_declenchements"] == 1
+
+
+@pytest.mark.asyncio
+async def test_executer_cycle_emet_l_evenement(coordinator):
+    """L'événement smartwake_triggered n'était jamais émis."""
+    await coordinator.set_actif(True)
+    with patch.object(coordinator, "_fire_event") as fire:
+        await coordinator._executer_cycle()
+    types = [c.args[0] for c in fire.call_args_list]
+    assert "smartwake_triggered" in types
+
+
+# ── Régression : écriture des entités number ───────────────────
+
+@pytest.mark.asyncio
+async def test_set_config_value(coordinator):
+    """set_config_value doit persister la valeur dans la config entry."""
+    await coordinator.set_actif(True)
+    await coordinator.set_config_value("aube_min", 30)
+    assert coordinator.config["aube_min"] == 30
+
+
+@pytest.mark.asyncio
+async def test_number_set_native_value(coordinator):
+    """Régression : ReveilNumber.async_set_native_value référençait
+    self.entry, jamais assigné, d'où AttributeError. Les 10 sliders
+    étaient en lecture seule."""
+    _stub_number_module()
+    from custom_components.smartwake.number import ReveilNumber, NUMBERS
+
+    desc = next(d for d in NUMBERS if d.key == "aube_min")
+    ent = ReveilNumber(coordinator, coordinator.entry, desc)
+    ent.hass = coordinator.hass
+
+    await ent.async_set_native_value(25)
+    assert coordinator.config["aube_min"] == 25
+    assert ent.native_value == 25
+
+
+@pytest.mark.asyncio
+async def test_number_step_entier_stocke_un_int(coordinator):
+    """Un step entier ne doit pas produire 25.0 dans la config."""
+    _stub_number_module()
+    from custom_components.smartwake.number import ReveilNumber, NUMBERS
+
+    desc = next(d for d in NUMBERS if d.key == "aube_min")
+    ent = ReveilNumber(coordinator, coordinator.entry, desc)
+    ent.hass = coordinator.hass
+
+    await ent.async_set_native_value(25.0)
+    assert isinstance(coordinator.config["aube_min"], int)
+
+
+@pytest.mark.asyncio
+async def test_number_volume_reste_flottant(coordinator):
+    """Un step fractionnaire (0.01) doit conserver la précision."""
+    _stub_number_module()
+    from custom_components.smartwake.number import ReveilNumber, NUMBERS
+
+    desc = next(d for d in NUMBERS if d.key == "volume_final")
+    ent = ReveilNumber(coordinator, coordinator.entry, desc)
+    ent.hass = coordinator.hass
+
+    await ent.async_set_native_value(0.42)
+    assert coordinator.config["volume_final"] == pytest.approx(0.42)
