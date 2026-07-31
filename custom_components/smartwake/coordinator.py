@@ -457,6 +457,14 @@ class ReveilCoordinator(DataUpdateCoordinator):
             self._planifier_trigger()
         self._notify()
 
+    async def set_config_value(self, key: str, value: Any) -> None:
+        """Met à jour une clé de configuration numérique et replanifie."""
+        new_data = {**self.entry.data, key: value}
+        self.hass.config_entries.async_update_entry(self.entry, data=new_data)
+        if self._actif:
+            self._planifier_trigger()
+        self._notify()
+
     async def set_skip(self, skip: bool) -> None:
         self._skip_prochain = skip
         self._notify()
