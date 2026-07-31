@@ -632,10 +632,20 @@ class ReveilCoordinator(DataUpdateCoordinator):
         return interne
 
     def _ecrire_config(self, **valeurs: Any) -> None:
-        """Écrit dans entry.data sans déclencher de rechargement."""
+        """Écrit dans entry.data sans déclencher de rechargement.
+
+        async_update_entry n'appelle les écouteurs que si les données ont
+        réellement changé. Réécrire une valeur identique laisserait donc le
+        drapeau armé, et c'est la modification d'options suivante qui serait
+        prise pour une écriture interne — donc ignorée.
+        """
         self._internal_update = True
         new_data = {**self.entry.data, **valeurs}
-        self.hass.config_entries.async_update_entry(self.entry, data=new_data)
+        modifie = self.hass.config_entries.async_update_entry(
+            self.entry, data=new_data
+        )
+        if not modifie:
+            self._internal_update = False
 
     async def set_heure(self, heure: str) -> None:
         self._ecrire_config(**{CONF_HEURE: heure})

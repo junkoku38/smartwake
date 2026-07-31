@@ -1860,3 +1860,103 @@ async def test_analyse_heure_planifiee(coordinator):
     assert coordinator._heure_minute("", "20:00") == (20, 0)
     assert coordinator._heure_minute("nawak", "20:00") == (20, 0)
     assert coordinator._heure_minute("99:99", "20:00") == (20, 0)
+
+
+# ── Synchronisation carte <-> options ──────────────────────────
+
+@pytest.mark.asyncio
+async def test_ecriture_identique_ne_bloque_pas_les_options(coordinator):
+    """Régression : async_update_entry n'appelle les écouteurs que si les
+    données ont réellement changé. Réécrire une valeur identique depuis la
+    carte laissait le drapeau d'écriture interne armé, si bien que la
+    modification d'options suivante était prise pour une écriture interne —
+    donc ignorée, sans rechargement ni prise en compte.
+    """
+    await coordinator.set_actif(True)
+    await coordinator.set_config_value("aube_min", 20)
+    assert coordinator.consume_internal_update() is True
+
+    # Même valeur : rien ne change, aucun écouteur ne sera appelé
+    await coordinator.set_config_value("aube_min", 20)
+    assert coordinator.consume_internal_update() is False, (
+        "le drapeau reste armé et avalera la prochaine modification d'options"
+    )
+
+
+@pytest.mark.asyncio
+async def test_modification_options_provoque_un_rechargement(coordinator):
+    """Une écriture venant du menu d'options doit recharger l'entrée, seul
+    moyen d'appliquer les changements structurels (entités, planification)."""
+    from custom_components.smartwake import _async_update_listener
+    from custom_components.smartwake.const import DOMAIN
+
+    hass = coordinator.hass
+    hass.data = {DOMAIN: {coordinator.entry.entry_id: coordinator}}
+    recharges = []
+
+    async def _reload(entry_id):
+        recharges.append(entry_id)
+
+    hass.config_entries.async_reload = _reload
+
+    # Écriture typique du menu d'options : le drapeau n'est pas armé
+    await _async_update_listener(hass, coordinator.entry)
+    assert recharges == [coordinator.entry.entry_id]
+
+
+@pytest.mark.asyncio
+async def test_modification_carte_ne_recharge_pas(coordinator):
+    """Une écriture venant d'une entité est déjà appliquée par le coordinator :
+    la recharger désarmerait le réveil."""
+    from custom_components.smartwake import _async_update_listener
+    from custom_components.smartwake.const import DOMAIN
+
+    hass = coordinator.hass
+    hass.data = {DOMAIN: {coordinator.entry.entry_id: coordinator}}
+    recharges = []
+
+    async def _reload(entry_id):
+        recharges.append(entry_id)
+
+    hass.config_entries.async_reload = _reload
+
+    await coordinator.set_actif(True)
+    await coordinator.set_config_value("aube_min", 33)
+    await _async_update_listener(hass, coordinator.entry)
+
+    assert recharges == [], "une écriture d'entité ne doit pas recharger"
+    assert coordinator.actif is True
+    assert coordinator.config["aube_min"] == 33
+
+
+@pytest.mark.asyncio
+async def test_valeur_ecrite_par_la_carte_visible_dans_les_options(coordinator):
+    """Ce que la carte écrit doit être relu par le formulaire d'options."""
+    from custom_components.smartwake.config_flow import SmartWAKEOptionsFlow
+
+    await coordinator.set_actif(True)
+    await coordinator.set_config_value("aube_min", 42)
+    await coordinator.set_heure("06:15")
+
+    flow = SmartWAKEOptionsFlow(coordinator.entry)
+    assert flow._data["aube_min"] == 42
+    assert flow._data["heure"] == "06:15"
+
+
+@pytest.mark.asyncio
+async def test_valeur_ecrite_par_les_options_visible_des_entites(coordinator):
+    """Et inversement : ce que les options écrivent doit être exposé par les
+    entités que lit la carte."""
+    import voluptuous as vol
+
+    from custom_components.smartwake.config_flow import SmartWAKEOptionsFlow
+
+    await coordinator.set_actif(True)
+    flow = SmartWAKEOptionsFlow(coordinator.entry)
+    flow.hass = coordinator.hass
+
+    schema = vol.Schema({vol.Optional("aube_min", default=20): int})
+    flow._enregistrer({"aube_min": 55}, schema)
+
+    # Le coordinator lit entry.data : la valeur est immédiatement disponible
+    assert coordinator.config["aube_min"] == 55

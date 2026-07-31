@@ -30,16 +30,36 @@ class _ConfigEntries:
         pass
 
     def async_update_entry(self, entry, **kw):
-        if "data" in kw:
+        """Reproduit le contrat de Home Assistant.
+
+        Renvoie True seulement si quelque chose a change, et n appelle les
+        ecouteurs que dans ce cas. Le mock renvoyait None sans distinction, ce
+        qui masquait un bug reel : une ecriture sans changement laissait armes
+        des drapeaux cotes integration.
+        """
+        change = False
+        if "data" in kw and entry.data != kw["data"]:
             entry.data = kw["data"]
+            change = True
+        for attr in ("version", "minor_version", "title", "options"):
+            if attr in kw and getattr(entry, attr, None) != kw[attr]:
+                setattr(entry, attr, kw[attr])
+                change = True
+        return change
 
 
 class _Services:
     def __init__(self):
         self.calls = []
 
-    async def async_call(self, domain, service, data=None):
-        self.calls.append({"domain": domain, "service": service, "data": data or {}})
+    async def async_call(self, domain, service, data=None, **kwargs):
+        self.calls.append({
+            "domain": domain, "service": service,
+            "data": data or {}, "kwargs": kwargs,
+        })
+
+    def has_service(self, domain, service):
+        return False
 
 
 class _States:
