@@ -36,6 +36,7 @@
         "data": {
           "heure": "Heure de réveil",
           "jours": "Jours actifs",
+          "jours_perso": "Jours personnalisés (si mode Personnalisé)",
           "ponctuel": "Réveil ponctuel",
           "skip_prochain": "Sauter le prochain",
           "mode_vacances": "Mode vacances"
