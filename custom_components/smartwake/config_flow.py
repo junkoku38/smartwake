@@ -273,25 +273,11 @@ async def _auto_detect_entities(hass: HomeAssistant) -> dict[str, str | None]:
     detected[CONF_MEDIA_PLAYER] = _choisir(_etats("media_player"))
     detected[CONF_RADIATEUR] = _choisir(_etats("climate"))
 
-    # Volets : jamais de garage, de portail ni de porte. On exige une classe
-    # d'ouvrant compatible ou un nom explicite.
-    OUVRANTS = ("shutter", "blind", "curtain", "shade", "awning", "window")
-    INTERDITS = ("garage", "gate", "door", "damper")
-
-    def _est_volet(etat) -> bool:
-        classe = (etat.attributes.get("device_class") or "").lower()
-        if classe in INTERDITS:
-            return False
-        if classe in OUVRANTS:
-            return True
-        if classe:
-            return False
-        texte = f"{etat.entity_id} {etat.attributes.get('friendly_name', '')}".lower()
-        if any(mot in texte for mot in ("garage", "portail", "porte", "gate")):
-            return False
-        return any(mot in texte for mot in ("volet", "shutter", "blind", "store", "rideau"))
-
-    detected[CONF_VOLETS] = _choisir(_etats("cover"), _est_volet)
+    # Volets : jamais pré-remplis, volontairement.
+    # Même un unique volet peut équiper une autre pièce que la chambre, et une
+    # ouverture non voulue au réveil se remarque tard. Le coût d'un champ à
+    # renseigner soi-même est sans commune mesure avec celui d'une erreur ici.
+    detected[CONF_VOLETS] = None
 
     # Entités de lecture seule : aucun risque d'action indésirable
     workdays = [e for e in _etats("binary_sensor") if "workday" in e.entity_id]

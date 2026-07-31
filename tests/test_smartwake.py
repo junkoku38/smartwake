@@ -1656,18 +1656,34 @@ async def test_auto_detection_ignore_portail_sans_device_class():
 
 
 @pytest.mark.asyncio
-async def test_auto_detection_retient_le_volet_de_chambre():
-    """Un volet de chambre identifiable doit être proposé, le garage écarté."""
+async def test_auto_detection_ne_propose_jamais_de_volet():
+    """Les volets ne sont jamais pré-remplis, quelle que soit la configuration.
+
+    Même un unique volet peut équiper une autre pièce que la chambre, et une
+    ouverture non voulue au réveil se remarque tard. Le coût d'un champ à
+    renseigner soi-même est sans commune mesure avec celui d'une erreur ici.
+    """
     from custom_components.smartwake.config_flow import _auto_detect_entities
 
+    for etats in (
+        [("cover.volet_chambre", {"device_class": "shutter"})],
+        [("cover.volet_salon", {"device_class": "shutter"})],
+        [("cover.baie", {"device_class": "window"})],
+        [("cover.porte_garage", {"device_class": "garage"})],
+    ):
+        detecte = await _auto_detect_entities(_faux_hass_avec(etats))
+        assert detecte.get("volets") is None, (
+            f"volet pré-rempli à tort : {detecte.get('volets')} pour {etats}"
+        )
+
+    # Les autres domaines restent proposés quand ils sont sans ambiguïté
     hass = _faux_hass_avec([
-        ("cover.porte_garage", {"device_class": "garage"}),
         ("cover.volet_chambre", {"device_class": "shutter"}),
         ("light.chambre", {}),
         ("light.salon", {}),
     ])
     detecte = await _auto_detect_entities(hass)
-    assert detecte["volets"] == "cover.volet_chambre"
+    assert detecte.get("volets") is None
     assert detecte["lumiere"] == "light.chambre"
 
 
@@ -1694,7 +1710,7 @@ async def test_auto_detection_s_abstient_si_ambigu():
 
 @pytest.mark.asyncio
 async def test_auto_detection_accepte_un_candidat_unique():
-    """Sans ambiguïté possible, la proposition reste utile."""
+    """Sans ambiguïté possible, la proposition reste utile — hors volets."""
     from custom_components.smartwake.config_flow import _auto_detect_entities
 
     hass = _faux_hass_avec([
@@ -1703,9 +1719,9 @@ async def test_auto_detection_accepte_un_candidat_unique():
         ("person.paul", {}),
     ])
     detecte = await _auto_detect_entities(hass)
-    assert detecte["volets"] == "cover.volet"
     assert detecte["lumiere"] == "light.plafonnier"
     assert detecte["presence"] == "person.paul"
+    assert detecte.get("volets") is None
 
 
 def test_presets_sans_entite_codee_en_dur():
