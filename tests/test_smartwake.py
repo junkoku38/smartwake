@@ -1412,3 +1412,104 @@ async def test_bilan_transmet_les_mesures_a_l_ia(coordinator):
     assert res == "bilan"
     assert "Sleep score" in captures["instructions"]
     assert "78%" in captures["instructions"]
+
+
+# ── Présence au lit : capteurs multiples au lieu de la caméra ──
+
+def test_plus_de_verification_par_camera():
+    """La vérification du lever reposait sur une analyse d'image par l'IA :
+    coûteuse, lente, dépendante de la luminosité, et discutable dans une
+    chambre. Elle s'appuie désormais sur les capteurs de présence au lit."""
+    src = open("custom_components/smartwake/ai.py", encoding="utf-8").read()
+    assert "CONF_AI_CAMERA_VERIF" not in src
+    assert "media-source://camera" not in src
+
+    flow = open("custom_components/smartwake/config_flow.py", encoding="utf-8").read()
+    assert 'CONF_AI_CAMERA_VERIF' not in flow
+
+
+@pytest.mark.asyncio
+async def test_presence_lit_accepte_plusieurs_capteurs(coordinator):
+    """Les deux champs Withings figés sont remplacés par une liste ouverte aux
+    radars millimétriques et aux capteurs sous matelas."""
+    coordinator.entry.data = {
+        **coordinator.entry.data,
+        "presence_lit_sensors": ["binary_sensor.matelas", "binary_sensor.radar"],
+    }
+    coordinator.hass.states.set("binary_sensor.matelas", "off")
+    coordinator.hass.states.set("binary_sensor.radar", "off")
+    assert coordinator._personne_au_lit() is False
+
+    coordinator.hass.states.set("binary_sensor.radar", "on")
+    assert coordinator._personne_au_lit() is True
+
+
+@pytest.mark.asyncio
+async def test_presence_lit_capteur_numerique(coordinator):
+    """Un capteur de pression ou de poids doit être interprété."""
+    coordinator.entry.data = {
+        **coordinator.entry.data,
+        "presence_lit_sensors": ["sensor.pression"],
+    }
+    coordinator.hass.states.set("sensor.pression", "0")
+    assert coordinator._personne_au_lit() is False
+    coordinator.hass.states.set("sensor.pression", "62.5")
+    assert coordinator._personne_au_lit() is True
+
+
+@pytest.mark.asyncio
+async def test_presence_lit_ignore_les_indisponibles(coordinator):
+    """Un capteur hors service ne doit pas être compris comme une absence."""
+    coordinator.entry.data = {
+        **coordinator.entry.data,
+        "presence_lit_sensors": ["binary_sensor.hs", "binary_sensor.matelas"],
+    }
+    coordinator.hass.states.set("binary_sensor.hs", "unavailable")
+    coordinator.hass.states.set("binary_sensor.matelas", "on")
+    assert coordinator._personne_au_lit() is True
+
+
+@pytest.mark.asyncio
+async def test_anciens_champs_withings_toujours_lus(coordinator):
+    """Compatibilité : une configuration non encore migrée doit continuer de
+    fonctionner."""
+    coordinator.entry.data = {
+        **coordinator.entry.data,
+        "withings_bed_1": "binary_sensor.w1",
+    }
+    coordinator.hass.states.set("binary_sensor.w1", "on")
+    assert "binary_sensor.w1" in coordinator._capteurs_lit()
+    assert coordinator._personne_au_lit() is True
+
+
+@pytest.mark.asyncio
+async def test_migration_vers_capteurs_de_presence(coordinator):
+    """Les deux champs Withings et la caméra doivent être convertis."""
+    from custom_components.smartwake import async_migrate_entry
+    from custom_components.smartwake.const import SCHEMA_VERSION
+
+    entry = coordinator.entry
+    entry.version = 3
+    entry.data = {
+        "heure": "07:00",
+        "withings_bed_1": "binary_sensor.w1",
+        "withings_bed_2": "binary_sensor.w2",
+        "ai_camera_verif": "camera.chambre",
+    }
+
+    def _update(e, data=None, version=None, **kw):
+        if data is not None:
+            e.data = dict(data)
+        if version is not None:
+            e.version = version
+
+    coordinator.hass.config_entries.async_update_entry = _update
+    assert await async_migrate_entry(coordinator.hass, entry) is True
+
+    assert entry.data["presence_lit_sensors"] == [
+        "binary_sensor.w1", "binary_sensor.w2",
+    ]
+    assert "withings_bed_1" not in entry.data
+    assert "ai_camera_verif" not in entry.data
+    assert entry.data["heure"] == "07:00"
+    assert entry.version == SCHEMA_VERSION

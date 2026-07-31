@@ -20,7 +20,6 @@ from .const import (
     CONF_AI_BILAN_HEBDO,
     CONF_SOMMEIL_SENSORS,
     CONF_AI_BRIEFING,
-    CONF_AI_CAMERA_VERIF,
     CONF_AI_CUSTOM_ENABLED,
     CONF_AI_CUSTOM_PROMPT,
     CONF_AI_CUSTOM_TRIGGER,
@@ -90,8 +89,7 @@ from .const import (
     CONF_VOLETS,
     CONF_VOLETS_SOLEIL,
     CONF_VACANCES_SCOLAIRES_CALENDAR,
-    CONF_WITHINGS_BED_1,
-    CONF_WITHINGS_BED_2,
+    CONF_PRESENCE_LIT_SENSORS,
     CONF_WEATHER_ENTITY,
     CONF_WORKDAY_SENSOR,
     CONF_BRIEFING_MULTI_CAPTEURS,
@@ -504,8 +502,11 @@ class SmartWAKEOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional(CONF_IGNORER_FERIES, default=data.get(CONF_IGNORER_FERIES, True)): bool,
                 vol.Optional(CONF_VACANCES_SCOLAIRES_CALENDAR): _entity("calendar"),
                 vol.Optional(CONF_IGNORER_VACANCES_SCOLAIRE, default=data.get(CONF_IGNORER_VACANCES_SCOLAIRE, False)): bool,
-                vol.Optional(CONF_WITHINGS_BED_1): _entity("binary_sensor"),
-                vol.Optional(CONF_WITHINGS_BED_2): _entity("binary_sensor"),
+                vol.Optional(CONF_PRESENCE_LIT_SENSORS, default=data.get(CONF_PRESENCE_LIT_SENSORS, [])): selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain=["binary_sensor", "sensor", "input_boolean"], multiple=True
+                    )
+                ),
                 vol.Optional(CONF_MOUVEMENT_SDB): _entity("binary_sensor"),
                 vol.Optional(CONF_MOUVEMENT_STOP, default=data.get(CONF_MOUVEMENT_STOP, False)): bool,
                 vol.Optional(CONF_LEVER_ANTICIPE, default=data.get(CONF_LEVER_ANTICIPE, False)): bool,
@@ -553,7 +554,6 @@ class SmartWAKEOptionsFlow(config_entries.OptionsFlow):
                     selector.EntitySelectorConfig(domain=["sensor", "binary_sensor"], multiple=True)
                 ),
                 vol.Optional(CONF_AI_VERIF_LEVER, default=data.get(CONF_AI_VERIF_LEVER, False)): bool,
-                vol.Optional(CONF_AI_CAMERA_VERIF): _entity("camera"),
                 vol.Optional(CONF_WEATHER_ENTITY): _entity("weather"),
                 vol.Optional(CONF_TRAJET_SENSOR): _entity("sensor"),
                 vol.Optional(CONF_BATTERIE_SENSOR): _entity("sensor"),

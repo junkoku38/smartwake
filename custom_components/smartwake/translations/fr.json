@@ -151,13 +151,12 @@
           "ignorer_feries": "Ignorer les jours fériés",
           "vacances_scolaires_calendar": "Calendrier vacances scolaires",
           "ignorer_vacances_scolaire": "Ignorer pendant vacances scolaires",
-          "withings_bed_1": "Capteur de lit 1 (Withings)",
-          "withings_bed_2": "Capteur de lit 2 (Withings)",
           "mouvement_sdb": "Capteur mouvement SdB",
           "mouvement_stop": "Arrêter au mouvement SdB",
           "lever_anticippe": "Annuler si lever anticipé",
           "mouvement_cuisine": "Capteur mouvement cuisine",
-          "escalade_intelligente": "Escalade progressive (3 niveaux)"
+          "escalade_intelligente": "Escalade progressive (3 niveaux)",
+          "presence_lit_sensors": "Capteurs de présence au lit"
         },
         "data_description": {
           "presence": "Le réveil NE sonnera PAS si cette personne n'est pas à la maison. Laisse vide pour toujours sonner.",
@@ -165,13 +164,12 @@
           "ignorer_feries": "Si activé, le réveil est désactivé les jours fériés (via le capteur workday ci-dessus).",
           "vacances_scolaires_calendar": "Calendrier des vacances scolaires (intégration Calendar avec flux ICS de l'Éducation nationale).",
           "ignorer_vacances_scolaire": "Si activé, le réveil est désactivé pendant les vacances scolaires (via le calendrier ci-dessus).",
-          "withings_bed_1": "Capteur de présence au lit (Withings Sleep). Le réveil ne sonne pas si personne n'est au lit.",
-          "withings_bed_2": "Capteur de lit pour une 2e personne (avec un 2e Withings).",
           "mouvement_sdb": "Capteur de mouvement dans la salle de bain. Sert pour l'arrêt automatique.",
           "mouvement_stop": "Si activé, le réveil s'arrête automatiquement quand un mouvement est détecté dans la salle de bain (= vous êtes levé).",
           "lever_anticippe": "Si activé et que vous êtes déjà levé (mouvement cuisine détecté avant l'heure), le réveil s'annule.",
           "mouvement_cuisine": "Capteur de mouvement dans la cuisine. Détecte un lever anticipé avant l'heure du réveil.",
-          "escalade_intelligente": "Si activé, l'escalade est progressive : 5 min (volume 60%), 10 min (80%), 15 min (100%). Au lieu de tout à 100% d'un coup."
+          "escalade_intelligente": "Si activé, l'escalade est progressive : 5 min (volume 60%), 10 min (80%), 15 min (100%). Au lieu de tout à 100% d'un coup.",
+          "presence_lit_sensors": "Capteurs indiquant qu'une personne est couchée : tapis ou capteur sous matelas (Withings Sleep…), radar millimétrique, capteur de pression. Le réveil ne sonne pas si personne n'est au lit, et sert aussi à vérifier le lever."
         }
       },
       "notification": {
@@ -213,7 +211,6 @@
           "ai_suggestion_heure": "Suggestion d'heure du soir",
           "ai_bilan_hebdo": "Bilan sommeil hebdomadaire",
           "ai_verif_lever": "Vérif lever caméra+IA",
-          "ai_camera_verif": "Caméra chambre",
           "weather_entity": "Météo (pour le briefing IA)",
           "trajet_sensor": "Capteur trajet (pour le briefing IA)",
           "batterie_sensor": "Capteur batterie (pour le briefing IA)",
@@ -230,7 +227,6 @@
           "ai_suggestion_heure": "Chaque soir à 21:30, l'IA analyse votre agenda et propose une heure de réveil optimale. Vous recevez une notification avec boutons **Accepter** / **Refuser**.\n\n**Prompt utilisé :** « Calcule l'heure de réveil idéale. Si aucun événement, garde l'heure actuelle. Ne propose jamais avant 05:30. »",
           "ai_bilan_hebdo": "Active le service `smartwake.bilan_hebdo` — à appeler via automation le dimanche. L'IA synthétise votre semaine (snoozes, heures de lever) et envoie des recommandations.\n\n**Prompt utilisé :** « Rédige un bilan bienveillant en 3 phrases + 1 conseil concret (ex : avancer le coucher de 20 min, réduire le snooze). »",
           "ai_verif_lever": "10 min après le Stop, l'IA prend une photo de la chambre et vérifie si vous êtes levé. Si vous vous êtes rendormi → escalade immédiate. ⚠️ Caméra en chambre = question de vie privée.\n\n**Prompt utilisé :** « Cette image vient de la chambre. Y a-t-il une personne allongée dans le lit ? »",
-          "ai_camera_verif": "La caméra utilisée pour la vérification du lever. Ne remplissez que si vous avez activé « Vérif lever » ci-dessus.",
           "weather_entity": "L'entité météo utilisée par l'IA pour le briefing et le choix musical. Ex : `weather.home` ou `weather.maison`.",
           "trajet_sensor": "Capteur de temps de trajet (ex : `sensor.waze_trajet_travail`) mentionné dans le briefing IA. Optionnel.",
           "batterie_sensor": "Capteur de batterie de votre téléphone (ex : `sensor.mon_tel_battery_level`) mentionné dans le briefing IA. Optionnel.",

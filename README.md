@@ -25,7 +25,7 @@ Un réveil domotique complet qui ne se contente pas de sonner : il **prépare la
 - **🎵 Musique** — MediaSelector (playlist/radio/favoris), volume progressif
 - **💡 Lumière** — aube progressive, luminosité, durée
 - **🏠 Confort** — chauffage, cafetière, volets (position %), scène matin
-- **🧠 Intelligence** — présence, jours fériés, Withings, mouvement, escalade
+- **🧠 Intelligence** — présence, jours fériés, capteurs de lit, mouvement, escalade
 - **📱 Notification** — notify (EntitySelector), TTS (message séparé), snooze
 - **🤖 AI Task** — briefing, musique adaptative, suggestion, **tasks personnalisées**
 
@@ -66,7 +66,10 @@ Chaque champ a une **description** expliquant ce qu'il fait et pourquoi.
 ### Intelligence contextuelle
 - **Présence** : ne sonne pas si la personne n'est pas à la maison
 - **Lever anticipé** : mouvement cuisine avant l'heure → annule la sonnerie
-- **Withings** : ne sonne pas si personne au lit
+- **Présence au lit** : ne sonne pas si personne n'est couché. Désignez autant de
+  capteurs que nécessaire dans *Options → Intelligence → Capteurs de présence au
+  lit* : tapis ou capteur sous matelas (Withings Sleep…), radar millimétrique,
+  capteur de pression. Les capteurs binaires comme numériques sont acceptés.
 - **Escalade intelligente** : 3 niveaux progressifs au lieu de tout à 100% d'un coup
 
 ### AI Task (HA ≥ 2025.8, optionnel)
@@ -80,7 +83,10 @@ Chaque champ a une **description** expliquant ce qu'il fait et pourquoi.
   capteur. Les moyennes sur 7 jours sont calculées via le recorder, avec repli
   sur la dernière nuit s'il est indisponible, et les durées en secondes sont
   converties en heures et minutes.
-- **Vérification lever caméra** : 10 min après le Stop, escalade si encore au lit
+- **Vérification du lever** : 10 min après le Stop, relance si vous êtes encore
+  couché, d'après les capteurs de présence au lit. Quand plusieurs capteurs se
+  contredisent — un radar peut détecter quelqu'un debout dans la pièce sans qu'il
+  soit au lit — l'IA arbitre ; sinon la réponse est directe, sans appel à l'IA.
 - **AI tasks personnalisées** : votre propre prompt + déclencheur + entités + notification
 
 > Les prompts utilisés sont **visibles** dans la description de chaque champ.

@@ -26,7 +26,7 @@ DOMAIN = "smartwake"
 
 # Version du schéma des config entries. Partagée entre le config flow et
 # async_migrate_entry pour qu'elles ne puissent pas divergerne.
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 def slugify(title: str) -> str:
@@ -113,6 +113,12 @@ CONF_MOUVEMENT_SDB = "mouvement_sdb"
 CONF_MOUVEMENT_STOP = "mouvement_stop"
 CONF_LEVER_ANTICIPE = "lever_anticippe"
 CONF_MOUVEMENT_CUISINE = "mouvement_cuisine"
+# Capteurs indiquant qu'une personne est couchée : tapis/capteur sous matelas
+# (Withings Sleep…), radar millimétrique, capteur de présence de lit.
+# Un sélecteur multiple remplace les deux champs Withings figés, qui limitaient
+# à deux capteurs d'une seule marque.
+CONF_PRESENCE_LIT_SENSORS = "presence_lit_sensors"
+# Conservées pour la migration des configurations créées avant le schéma 4
 CONF_WITHINGS_BED_1 = "withings_bed_1"
 CONF_WITHINGS_BED_2 = "withings_bed_2"
 CONF_BRIGHTNESS_MAX = "brightness_max"

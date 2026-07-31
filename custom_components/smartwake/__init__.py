@@ -22,6 +22,10 @@ from .const import (
     SERVICE_BILAN_HEBDO,
     integration_version,
     SCHEMA_VERSION,
+    CONF_PRESENCE_LIT_SENSORS,
+    CONF_WITHINGS_BED_1,
+    CONF_WITHINGS_BED_2,
+    CONF_AI_CAMERA_VERIF,
 )
 from .coordinator import ReveilCoordinator
 
@@ -130,8 +134,24 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "Migration de '%s' du schéma %s vers %s",
             entry.title, entry.version, SCHEMA_VERSION,
         )
+        data = {**entry.data}
+
+        if entry.version < 4:
+            # Les deux champs Withings figés deviennent une liste de capteurs de
+            # présence au lit, ouverte aux radars millimétriques et aux autres
+            # marques. Les valeurs déjà saisies sont reprises.
+            capteurs = list(data.get(CONF_PRESENCE_LIT_SENSORS) or [])
+            for ancienne in (CONF_WITHINGS_BED_1, CONF_WITHINGS_BED_2):
+                valeur = data.pop(ancienne, None)
+                if valeur and valeur not in capteurs:
+                    capteurs.append(valeur)
+            if capteurs:
+                data[CONF_PRESENCE_LIT_SENSORS] = capteurs
+            # La vérification du lever n'utilise plus de caméra
+            data.pop(CONF_AI_CAMERA_VERIF, None)
+
         hass.config_entries.async_update_entry(
-            entry, data={**entry.data}, version=SCHEMA_VERSION, minor_version=0
+            entry, data=data, version=SCHEMA_VERSION, minor_version=0
         )
 
     return True

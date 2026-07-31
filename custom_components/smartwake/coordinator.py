@@ -96,6 +96,7 @@ from .const import (
     CONF_VOLETS_POSITION,
     CONF_VOLETS_SOLEIL,
     CONF_WEATHER_ENTITY,
+    CONF_PRESENCE_LIT_SENSORS,
     CONF_WITHINGS_BED_1,
     CONF_WITHINGS_BED_2,
     CONF_WORKDAY_SENSOR,
@@ -650,15 +651,38 @@ class ReveilCoordinator(DataUpdateCoordinator):
 
         return True
 
-    def _personne_au_lit(self) -> bool:
-        """Vérifie Withings — vrai si quelqu'un est au lit."""
+    def _capteurs_lit(self) -> list[str]:
+        """Capteurs indiquant qu'une personne est couchée.
+
+        Les deux anciens champs Withings restent lus au cas où la migration
+        n'aurait pas encore eu lieu.
+        """
         cfg = self.entry.data
-        for key in (CONF_WITHINGS_BED_1, CONF_WITHINGS_BED_2):
-            entity = cfg.get(key)
-            if entity:
-                state = self.hass.states.get(entity)
-                if state and state.state == "on":
+        capteurs = list(cfg.get(CONF_PRESENCE_LIT_SENSORS) or [])
+        for ancienne in (CONF_WITHINGS_BED_1, CONF_WITHINGS_BED_2):
+            valeur = cfg.get(ancienne)
+            if valeur and valeur not in capteurs:
+                capteurs.append(valeur)
+        return capteurs
+
+    def _personne_au_lit(self) -> bool:
+        """Vrai si au moins un capteur signale une personne couchée.
+
+        Accepte les capteurs binaires (radar millimétrique, tapis sous matelas)
+        comme les capteurs numériques, dont toute valeur non nulle est
+        interprétée comme une présence.
+        """
+        for entity in self._capteurs_lit():
+            state = self.hass.states.get(entity)
+            if state is None or state.state in ("unknown", "unavailable"):
+                continue
+            if state.state in ("on", "home", "occupied", "detected", "true"):
+                return True
+            try:
+                if float(state.state) > 0:
                     return True
+            except (TypeError, ValueError):
+                continue
         return False
 
     # ── Planification ─────────────────────────────────────────
@@ -716,7 +740,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
                 if ajuste is not None:
                     candidate = ajuste
 
-            if cfg.get(CONF_SOMMEIL_PHASE, False) and cfg.get(CONF_WITHINGS_BED_1):
+            if cfg.get(CONF_SOMMEIL_PHASE, False) and self._capteurs_lit():
                 candidate -= timedelta(minutes=self._avance_phase_sommeil(cfg))
             if candidate <= now:
                 continue
@@ -804,10 +828,10 @@ class ReveilCoordinator(DataUpdateCoordinator):
         reportait le réveil de près de 24 h lorsque l'avance franchissait
         minuit (00:10 avancé de 20 min donnait 23:50 le même jour).
         """
-        bed_1 = cfg.get(CONF_WITHINGS_BED_1)
-        if not bed_1:
+        capteurs = self._capteurs_lit()
+        if not capteurs:
             return 0
-        state = self.hass.states.get(bed_1)
+        state = self.hass.states.get(capteurs[0])
         if state is None:
             return 0
         sleep_state = state.attributes.get("sleep_state", state.state)
@@ -861,7 +885,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
         self._cancel_prewake = None
         if not self._sonne_aujourd_hui(now):
             return
-        if self._personne_au_lit() is False and self.entry.data.get(CONF_WITHINGS_BED_1):
+        if self._capteurs_lit() and not self._personne_au_lit():
             _LOGGER.info("Pré-réveil annulé — personne au lit (Withings)")
             return
 
@@ -911,7 +935,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
                     return
 
         # Withings : si personne au lit
-        if self.entry.data.get(CONF_WITHINGS_BED_1) and not self._personne_au_lit():
+        if self._capteurs_lit() and not self._personne_au_lit():
             self._abandonner_reveil("personne n'est au lit")
             return
 

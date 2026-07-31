@@ -17,7 +17,9 @@ from .const import (
     CONF_AI_BILAN_HEBDO,
     CONF_SOMMEIL_SENSORS,
     CONF_AI_BRIEFING,
-    CONF_AI_CAMERA_VERIF,
+    CONF_PRESENCE_LIT_SENSORS,
+    CONF_WITHINGS_BED_1,
+    CONF_WITHINGS_BED_2,
     CONF_AI_CUSTOM_ENABLED,
     CONF_AI_CUSTOM_PROMPT,
     CONF_AI_CUSTOM_TASKS,
@@ -333,14 +335,73 @@ donnée absente."""
 async def verify_person_in_bed(
     hass: HomeAssistant, cfg: dict
 ) -> bool | None:
-    """Vérifie via caméra+IA si une personne est encore au lit."""
-    if not cfg.get(CONF_AI_VERIF_LEVER) or not cfg.get(CONF_AI_CAMERA_VERIF):
+    """Indique si une personne est encore couchée.
+
+    Reposait auparavant sur une analyse d'image de caméra par l'IA : coûteux,
+    lent, tributaire de la luminosité de la chambre, et discutable dans une
+    pièce de sommeil. La détection s'appuie désormais sur les capteurs de
+    présence au lit — tapis sous matelas, radar millimétrique — dont la réponse
+    est directe et fiable.
+
+    Renvoie None si aucun capteur n'est configuré, afin de distinguer
+    « personne n'est au lit » de « on ne sait pas ».
+    """
+    if not cfg.get(CONF_AI_VERIF_LEVER):
         return None
 
-    camera = cfg[CONF_AI_CAMERA_VERIF]
+    capteurs = list(cfg.get(CONF_PRESENCE_LIT_SENSORS) or [])
+    for ancienne in (CONF_WITHINGS_BED_1, CONF_WITHINGS_BED_2):
+        valeur = cfg.get(ancienne)
+        if valeur and valeur not in capteurs:
+            capteurs.append(valeur)
+    if not capteurs:
+        return None
 
-    instructions = "Cette image vient de la chambre. Y a-t-il une personne allongée dans le lit ?"
+    releves: dict[str, str] = {}
+    for entity_id in capteurs:
+        etat = hass.states.get(entity_id)
+        if etat is None or etat.state in ("unknown", "unavailable"):
+            continue
+        releves[entity_id] = etat.state
 
+    if not releves:
+        return None
+
+    def _occupe(valeur: str) -> bool | None:
+        if valeur in ("on", "home", "occupied", "detected", "true"):
+            return True
+        if valeur in ("off", "not_home", "clear", "false"):
+            return False
+        try:
+            return float(valeur) > 0
+        except (TypeError, ValueError):
+            return None
+
+    verdicts = [v for v in (_occupe(x) for x in releves.values()) if v is not None]
+    if not verdicts:
+        return None
+
+    # Accord de tous les capteurs : réponse directe, sans appel à l'IA
+    if all(verdicts) or not any(verdicts):
+        return verdicts[0]
+
+    # Désaccord : c'est le seul cas où l'IA apporte quelque chose, en pondérant
+    # la nature de chaque capteur (un radar peut voir la pièce sans le lit).
+    lignes = []
+    for entity_id, valeur in releves.items():
+        etat = hass.states.get(entity_id)
+        nom = (etat.attributes.get("friendly_name") if etat else None) or entity_id
+        lignes.append(f"- {nom} ({entity_id}) : {valeur}")
+
+    instructions = (
+        "Des capteurs de la chambre donnent des indications contradictoires sur "
+        "la présence d'une personne dans le lit.\n"
+        + "\n".join(lignes)
+        + "\nUn capteur sous le matelas ou de pression indique une personne "
+        "réellement couchée. Un capteur de présence ou un radar peut détecter "
+        "quelqu'un debout dans la pièce sans qu'il soit au lit. Détermine si une "
+        "personne est encore couchée."
+    )
     structure = {
         "au_lit": {
             "description": "true si une personne est encore couchée",
@@ -348,15 +409,12 @@ async def verify_person_in_bed(
         }
     }
 
-    attachments = {
-        "media_content_id": f"media-source://camera/{camera}",
-        "media_content_type": "image/jpeg",
-    }
-
-    result = await _call_ai_task(hass, "Vérif lever", instructions, structure, attachments, cfg=cfg)
+    result = await _call_ai_task(hass, "Vérif lever", instructions, structure, cfg=cfg)
     if result and "data" in result and "au_lit" in result["data"]:
         return result["data"]["au_lit"]
-    return None
+
+    # Repli sans IA : la majorité des capteurs l'emporte
+    return sum(verdicts) > len(verdicts) / 2
 
 
 async def run_custom_ai_task(
