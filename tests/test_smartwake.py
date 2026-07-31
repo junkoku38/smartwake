@@ -6,6 +6,7 @@ Utilise le mock HA de /tmp/hatest pour valider la logique sans HA réel.
 import asyncio
 import sys
 from datetime import datetime, timedelta
+from datetime import time as dtime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -76,6 +77,29 @@ def _stub_number_module():
 
     if not hasattr(dr, "DeviceInfo"):
         dr.DeviceInfo = dict
+
+
+def _stub_storage_module():
+    """learning.py importe homeassistant.helpers.storage, absent du mock."""
+    import types
+
+    if "homeassistant.helpers.storage" in sys.modules:
+        return
+
+    mod = types.ModuleType("homeassistant.helpers.storage")
+
+    class Store:
+        def __init__(self, hass, version, key):
+            self._data = None
+
+        async def async_load(self):
+            return self._data
+
+        async def async_save(self, data):
+            self._data = data
+
+    mod.Store = Store
+    sys.modules["homeassistant.helpers.storage"] = mod
 
 
 # ── Tests _jours_actifs et _parse_heure ────────────────────────
@@ -235,11 +259,43 @@ async def test_coordinator_mode_vacances(coordinator):
 
 @pytest.mark.asyncio
 async def test_coordinator_skip_prochain(coordinator):
-    """Skip prochain désactive la sonnerie du jour."""
+    """Le saut annule la sonnerie de l'occurrence visée."""
     await coordinator.set_actif(True)
     await coordinator.sauter_prochain()
-    lundi = datetime(2026, 7, 6, 7, 0)
-    assert coordinator._sonne_aujourd_hui(lundi) is False
+    assert coordinator._skip_date is not None
+    vise = datetime.combine(coordinator._skip_date, dtime(7, 0))
+    assert coordinator._sonne_aujourd_hui(vise) is False
+
+
+@pytest.mark.asyncio
+async def test_skip_ne_vaut_que_pour_l_occurrence_visee(coordinator):
+    """Régression : le saut n'était jamais consommé, donc le réveil ne
+    sonnait plus jamais. stop(), seul à remettre le drapeau à zéro, n'était
+    plus atteint puisque le réveil ne sonnait pas."""
+    await coordinator.set_actif(True)
+    await coordinator.sauter_prochain()
+    saute = coordinator._skip_date
+
+    # Une semaine plus tard, un jour ouvré doit de nouveau sonner
+    plus_tard = datetime.combine(saute, dtime(7, 0)) + timedelta(days=7)
+    while plus_tard.weekday() > 4:
+        plus_tard += timedelta(days=1)
+    assert coordinator._sonne_aujourd_hui(plus_tard) is True
+
+
+@pytest.mark.asyncio
+async def test_skip_consomme_apres_l_occurrence(coordinator):
+    """Le drapeau doit être libéré par la boucle de rafraîchissement une
+    fois l'occurrence sautée passée."""
+    await coordinator.set_actif(True)
+    await coordinator.sauter_prochain()
+    assert coordinator.skip_prochain is True
+
+    # Simule le lendemain de l'occurrence sautée
+    coordinator._skip_date = (datetime.now() - timedelta(days=1)).date()
+    await coordinator._async_update_data()
+    assert coordinator.skip_prochain is False
+    assert coordinator._skip_date is None
 
 
 # ── Tests config_flow validation ───────────────────────────────
@@ -577,3 +633,141 @@ def test_champs_options_traduits():
             libelles = set(steps[step].get("data", {}))
             manquants = [c for c in champs if c not in libelles]
             assert not manquants, f"{fichier} étape '{step}' : champs sans libellé {manquants}"
+
+
+# ── Régression : armement des déclencheurs ─────────────────────
+
+@pytest.mark.asyncio
+async def test_triggers_armes_au_demarrage(coordinator):
+    """Régression : async_config_entry_first_refresh calculait _prochain mais
+    n'appelait jamais _planifier_trigger. Après un redémarrage de HA, aucun
+    déclencheur n'était enregistré et le réveil ne sonnait pas."""
+    # Le mock HA n'expose ni bus d'événements ni Store
+    coordinator.hass.bus = MagicMock()
+    coordinator.hass.bus.async_listen = MagicMock(return_value=lambda: None)
+
+    _stub_storage_module()
+    from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+
+    coordinator._actif = True
+
+    # On enregistre l'ordre des appels : l'armement doit précéder le premier
+    # rafraîchissement, sinon c'est le filet de sécurité qui le rattrape.
+    ordre = []
+    plan_reel = coordinator._planifier_trigger
+    super_reel = DataUpdateCoordinator.async_config_entry_first_refresh
+
+    def _plan():
+        ordre.append("armement")
+        plan_reel()
+
+    async def _super(self):
+        ordre.append("refresh")
+        return await super_reel(self)
+
+    with patch.object(coordinator, "_planifier_trigger", _plan), \
+            patch.object(DataUpdateCoordinator, "async_config_entry_first_refresh", _super):
+        await coordinator.async_config_entry_first_refresh()
+
+    assert "armement" in ordre, "_planifier_trigger n'est jamais appelé au démarrage"
+    assert ordre.index("armement") < ordre.index("refresh"), (
+        f"l'armement doit avoir lieu au setup, pas via le filet de sécurité : {ordre}"
+    )
+    assert coordinator._cancel_trigger is not None
+
+
+@pytest.mark.asyncio
+async def test_planification_calee_sur_prochain(coordinator):
+    """Le déclencheur doit viser exactement _prochain.
+
+    Régression : async_track_time_change posait un déclencheur par heure
+    configurée, sans vérifier le jour. En mode « heure par jour », l'heure du
+    lundi sonnait donc aussi le mardi. Le décalage par agenda adaptatif et par
+    phase de sommeil était également ignoré.
+    """
+    import custom_components.smartwake.coordinator as coord_mod
+
+    points = []
+    original = coord_mod.async_track_point_in_time
+
+    def _spy(hass, cb, point):
+        points.append(point)
+        return original(hass, cb, point)
+
+    coord_mod.async_track_point_in_time = _spy
+    try:
+        await coordinator.set_actif(True)
+    finally:
+        coord_mod.async_track_point_in_time = original
+
+    assert coordinator._prochain in points, (
+        f"le déclencheur ne vise pas _prochain ({coordinator._prochain}) : {points}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_heure_par_jour_ne_sonne_pas_les_autres_jours(coordinator):
+    """En mode par_jour, _prochain doit porter l'heure du bon jour."""
+    await coordinator.set_config_value("mode_heure", "par_jour")
+    await coordinator.set_config_value("jours", "tous")
+    for cle, val in (
+        ("heure_lundi", "06:00"), ("heure_mardi", "07:00"),
+        ("heure_mercredi", "07:00"), ("heure_jeudi", "07:00"),
+        ("heure_vendredi", "07:00"), ("heure_samedi", "08:30"),
+        ("heure_dimanche", "08:30"),
+    ):
+        await coordinator.set_config_value(cle, val)
+
+    await coordinator.set_actif(True)
+    prochain = coordinator.prochain_reveil
+    assert prochain is not None
+
+    attendu = {
+        0: (6, 0), 1: (7, 0), 2: (7, 0), 3: (7, 0),
+        4: (7, 0), 5: (8, 30), 6: (8, 30),
+    }[prochain.weekday()]
+    assert (prochain.hour, prochain.minute) == attendu, (
+        f"{prochain} ne correspond pas à l'heure du jour {prochain.weekday()}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_trigger_consomme_est_rearme(coordinator):
+    """Le déclencheur étant à usage unique, la boucle de rafraîchissement doit
+    le réarmer s'il a été consommé sans démarrer de cycle."""
+    await coordinator.set_actif(True)
+    coordinator._cancel_trigger = None
+    await coordinator._async_update_data()
+    assert coordinator._cancel_trigger is not None
+
+
+# ── Régression : écriture de config sans rechargement ──────────
+
+@pytest.mark.asyncio
+async def test_ecriture_entite_ne_declenche_pas_de_rechargement(coordinator):
+    """Régression : chaque écriture dans entry.data déclenchait l'update
+    listener, donc async_reload, donc un nouveau coordinator avec actif=False.
+    Bouger un curseur désarmait le réveil.
+    """
+    await coordinator.set_actif(True)
+    await coordinator.set_config_value("aube_min", 30)
+    # Le drapeau doit signaler une écriture interne, donc pas de rechargement
+    assert coordinator.consume_internal_update() is True
+    # et il ne doit être consommé qu'une fois
+    assert coordinator.consume_internal_update() is False
+    assert coordinator.actif is True
+
+
+@pytest.mark.asyncio
+async def test_reste_actif_apres_modification_de_reglages(coordinator):
+    """L'enchaînement complet ne doit pas désarmer le réveil."""
+    await coordinator.set_actif(True)
+    for cle, val in (("aube_min", 25), ("snooze_duree", 8), ("volume_final", 0.5)):
+        await coordinator.set_config_value(cle, val)
+    await coordinator.set_heure("06:45")
+    await coordinator.set_jours("tous")
+
+    assert coordinator.actif is True
+    assert coordinator._cancel_trigger is not None
+    assert coordinator.config["aube_min"] == 25
+    assert coordinator.config["heure"] == "06:45"

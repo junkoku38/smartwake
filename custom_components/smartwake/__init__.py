@@ -136,4 +136,14 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Recharge l'entrée après une modification via le menu d'options.
+
+    Les écritures provoquées par une entité (heure, jours, curseurs, mode
+    vacances) ne doivent pas déclencher de rechargement : le coordinator les
+    applique déjà lui-même. Recharger reviendrait à recréer le coordinator,
+    donc à repasser `actif` à False et à désarmer le réveil.
+    """
+    coordinator = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    if coordinator is not None and coordinator.consume_internal_update():
+        return
     await hass.config_entries.async_reload(entry.entry_id)

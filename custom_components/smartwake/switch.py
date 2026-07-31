@@ -6,9 +6,11 @@ import logging
 
 from homeassistant.components.switch import SwitchEntity, SwitchEntityDescription
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import STATE_ON
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import CONF_MODE_VACANCES, DOMAIN
 from .coordinator import ReveilCoordinator
@@ -48,8 +50,12 @@ async def async_setup_entry(
     ])
 
 
-class ReveilSwitch(SwitchEntity):
-    """Interrupteur d'activation du réveil."""
+class ReveilSwitch(SwitchEntity, RestoreEntity):
+    """Interrupteur d'activation du réveil.
+
+    L'état est restauré au redémarrage de Home Assistant : sans cela le réveil
+    repassait à « off » et, surtout, aucun déclencheur n'était réarmé.
+    """
 
     def __init__(self, coordinator, entry, description):
         self.coordinator = coordinator
@@ -72,6 +78,12 @@ class ReveilSwitch(SwitchEntity):
         await self.coordinator.set_actif(False)
 
     async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        # Restaure l'activation et réarme les déclencheurs
+        if not self.coordinator.actif:
+            last = await self.async_get_last_state()
+            if last is not None and last.state == STATE_ON:
+                await self.coordinator.set_actif(True)
         self.async_on_remove(self.coordinator.async_add_listener(self._handle_update))
 
     def _handle_update(self) -> None:
@@ -110,7 +122,7 @@ class ReveilVacancesSwitch(SwitchEntity):
         self.async_write_ha_state()
 
 
-class ReveilSkipSwitch(SwitchEntity):
+class ReveilSkipSwitch(SwitchEntity, RestoreEntity):
     """Saut du prochain réveil.
 
     Contrairement au bouton « Sauter prochain », cet interrupteur rend l'état
@@ -138,6 +150,11 @@ class ReveilSkipSwitch(SwitchEntity):
         await self.coordinator.set_skip(False)
 
     async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        if not self.coordinator.skip_prochain:
+            last = await self.async_get_last_state()
+            if last is not None and last.state == STATE_ON:
+                await self.coordinator.set_skip(True)
         self.async_on_remove(self.coordinator.async_add_listener(self._handle_update))
 
     def _handle_update(self) -> None:

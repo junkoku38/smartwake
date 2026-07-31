@@ -13,14 +13,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import Any, Callable
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, State, callback
 from homeassistant.helpers.event import (
+    async_track_point_in_time,
     async_track_time_change,
-    async_track_point_in_utc_time,
 )
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
@@ -170,6 +170,10 @@ class ReveilCoordinator(DataUpdateCoordinator):
         self._reveil_en_cours = False
         self._snooze_count = 0
         self._skip_prochain = False
+        # Date de l'occurrence sautée, pour que le saut ne vaille qu'une fois
+        self._skip_date: date | None = None
+        # Marque une écriture de config provoquée par une entité
+        self._internal_update = False
         self._unsub_listeners: list[Callable] = []
         self._learning: Any = None
 
@@ -203,7 +207,23 @@ class ReveilCoordinator(DataUpdateCoordinator):
 
     async def _async_update_data(self) -> dict[str, Any]:
         if self._actif and not self._reveil_en_cours:
-            self._calculer_prochain()
+            # Le saut ne vaut que pour l'occurrence visée : dès qu'elle est
+            # passée, on le consomme, sinon le réveil ne sonnerait plus jamais.
+            if (
+                self._skip_prochain
+                and self._skip_date is not None
+                and dt_util.now().date() > self._skip_date
+            ):
+                self._skip_prochain = False
+                self._skip_date = None
+                _LOGGER.debug("Saut du prochain consommé pour '%s'", self.entry.title)
+
+            # Filet de sécurité : le déclencheur est à usage unique, on le
+            # réarme s'il a été consommé sans qu'un cycle ait démarré.
+            if self._cancel_trigger is None:
+                self._planifier_trigger()
+            else:
+                self._calculer_prochain()
         return {
             "actif": self._actif,
             "statut": self._statut,
@@ -215,6 +235,11 @@ class ReveilCoordinator(DataUpdateCoordinator):
     async def async_config_entry_first_refresh(self) -> None:
         """Premier rafraîchissement — watchdog + planification + learning."""
         self._calculer_prochain()
+        # Réarme les déclencheurs si le réveil était actif : sans cela, aucun
+        # async_track_* n'était enregistré au démarrage de Home Assistant et
+        # le réveil ne sonnait pas tant qu'un réglage n'avait pas été modifié.
+        if self._actif:
+            self._planifier_trigger()
         await super().async_config_entry_first_refresh()
         # Watchdog : vérifier l'armement au démarrage HA
         self._watchdog()
@@ -462,30 +487,48 @@ class ReveilCoordinator(DataUpdateCoordinator):
 
     # ── Mise à jour config ─────────────────────────────────────
 
-    async def set_heure(self, heure: str) -> None:
-        new_data = {**self.entry.data, CONF_HEURE: heure}
+    def consume_internal_update(self) -> bool:
+        """Indique si la dernière écriture de config vient d'une entité.
+
+        Une écriture provoquée par une entité (curseur, heure, sélecteur) est
+        déjà traitée sur place par _planifier_trigger() et _notify() : il ne
+        faut surtout pas recharger l'entrée, sinon l'état d'exécution du
+        coordinator est perdu et le réveil se retrouve désarmé.
+        """
+        interne = self._internal_update
+        self._internal_update = False
+        return interne
+
+    def _ecrire_config(self, **valeurs: Any) -> None:
+        """Écrit dans entry.data sans déclencher de rechargement."""
+        self._internal_update = True
+        new_data = {**self.entry.data, **valeurs}
         self.hass.config_entries.async_update_entry(self.entry, data=new_data)
+
+    async def set_heure(self, heure: str) -> None:
+        self._ecrire_config(**{CONF_HEURE: heure})
         if self._actif:
             self._planifier_trigger()
         self._notify()
 
     async def set_jours(self, mode: str) -> None:
-        new_data = {**self.entry.data, CONF_JOURS: mode}
-        self.hass.config_entries.async_update_entry(self.entry, data=new_data)
+        self._ecrire_config(**{CONF_JOURS: mode})
         if self._actif:
             self._planifier_trigger()
         self._notify()
 
     async def set_config_value(self, key: str, value: Any) -> None:
-        """Met à jour une clé de configuration numérique et replanifie."""
-        new_data = {**self.entry.data, key: value}
-        self.hass.config_entries.async_update_entry(self.entry, data=new_data)
+        """Met à jour une clé de configuration et replanifie."""
+        self._ecrire_config(**{key: value})
         if self._actif:
             self._planifier_trigger()
         self._notify()
 
     async def set_skip(self, skip: bool) -> None:
+        """Active ou annule le saut de la prochaine occurrence."""
         self._skip_prochain = skip
+        # Le saut ne vaut que pour l'occurrence actuellement planifiée
+        self._skip_date = self._prochain.date() if (skip and self._prochain) else None
         self._notify()
 
     # ── Conditions de déclenchement ────────────────────────────
@@ -503,7 +546,12 @@ class ReveilCoordinator(DataUpdateCoordinator):
             state = self.hass.states.get(vac_entity)
             if state and state.state == "on":
                 return False
-        if self._skip_prochain:
+        # Le saut ne s'applique qu'à l'occurrence visée. Sans cette borne, un
+        # appui sur « Sauter prochain » désactivait le réveil définitivement,
+        # car stop() — seul à remettre le drapeau à zéro — n'était plus atteint.
+        if self._skip_prochain and (
+            self._skip_date is None or now.date() == self._skip_date
+        ):
             return False
 
         mode = cfg.get(CONF_JOURS, "semaine")
@@ -671,60 +719,37 @@ class ReveilCoordinator(DataUpdateCoordinator):
         return heure_defaut
 
     def _planifier_trigger(self) -> None:
-        """Programme les déclencheurs pour le pré-réveil et le réveil."""
+        """Programme les déclencheurs pour le pré-réveil et le réveil.
+
+        La planification se cale sur `self._prochain`, qui intègre déjà le mode
+        « heure par jour », l'agenda adaptatif et la phase de sommeil. Un point
+        dans le temps est utilisé plutôt qu'un déclencheur horaire quotidien :
+        ce dernier sonnait à toutes les heures configurées quel que soit le
+        jour, et ignorait les décalages adaptatifs.
+        """
         self._nettoyer_triggers()
         self._calculer_prochain()
         if self._prochain is None:
             return
 
-        cfg = self.entry.data
-        mode_heure = cfg.get(CONF_MODE_HEURE, "unique")
+        self._cancel_trigger = async_track_point_in_time(
+            self.hass, self._trigger_callback, self._prochain
+        )
 
-        # Collecter toutes les heures distinctes à déclencher
-        heures_distinctes = set()
-        if mode_heure == "par_jour":
-            for key in (CONF_HEURE_LUNDI, CONF_HEURE_MARDI, CONF_HEURE_MERCREDI,
-                        CONF_HEURE_JEUDI, CONF_HEURE_VENDREDI, CONF_HEURE_SAMEDI,
-                        CONF_HEURE_DIMANCHE):
-                h = cfg.get(key)
-                if h:
-                    try:
-                        heures_distinctes.add(_parse_heure(h))
-                    except (ValueError, IndexError):
-                        pass
-        if not heures_distinctes:
-            heures_distinctes = {_parse_heure(cfg.get(CONF_HEURE, "07:00"))}
-
-        # Trigger principal du réveil — un trigger par heure distincte
-        triggers = []
-        for heure in heures_distinctes:
-            triggers.append(async_track_time_change(
-                self.hass,
-                self._trigger_callback,
-                hour=heure.hour,
-                minute=heure.minute,
-                second=0,
-            ))
-        self._cancel_trigger = lambda: [t() for t in triggers] if triggers else None
-
-        # Trigger pré-réveil
         prechauffe = self.entry.data.get(CONF_PRECHAUFFE_MIN, DEFAULT_PRECHAUFFE_MIN)
         aube = self.entry.data.get(CONF_AUBE_MIN, DEFAULT_AUBE_MIN)
         pre_delai = max(prechauffe, aube)
 
         if pre_delai > 0:
-            heure_pre = (datetime.combine(datetime.today(), heure) - timedelta(minutes=pre_delai)).time()
-            self._cancel_prewake = async_track_time_change(
-                self.hass,
-                self._trigger_prewake,
-                hour=heure_pre.hour,
-                minute=heure_pre.minute,
-                second=0,
-            )
+            instant_pre = self._prochain - timedelta(minutes=pre_delai)
+            if instant_pre > dt_util.now():
+                self._cancel_prewake = async_track_point_in_time(
+                    self.hass, self._trigger_prewake, instant_pre
+                )
 
         _LOGGER.info(
-            "Réveil '%s' programmé à %s (pré-réveil à H-%dmin, prochain: %s)",
-            self.entry.title, heure.strftime("%H:%M"), pre_delai, self._prochain,
+            "Réveil '%s' programmé pour %s (pré-réveil à H-%dmin)",
+            self.entry.title, self._prochain, pre_delai,
         )
 
     # ── Callbacks triggers ─────────────────────────────────────
@@ -732,6 +757,8 @@ class ReveilCoordinator(DataUpdateCoordinator):
     @callback
     def _trigger_prewake(self, now: datetime) -> None:
         """Phase de pré-réveil : chauffage, aube, café."""
+        # Déclencheur à usage unique : il est consommé
+        self._cancel_prewake = None
         if not self._sonne_aujourd_hui(now):
             return
         if self._personne_au_lit() is False and self.entry.data.get(CONF_WITHINGS_BED_1):
@@ -746,6 +773,8 @@ class ReveilCoordinator(DataUpdateCoordinator):
     @callback
     def _trigger_callback(self, now: datetime) -> None:
         """Phase de réveil principal."""
+        # Déclencheur à usage unique : il est consommé
+        self._cancel_trigger = None
         if self._reveil_en_cours:
             return
         if not self._sonne_aujourd_hui(now):
@@ -758,7 +787,10 @@ class ReveilCoordinator(DataUpdateCoordinator):
                 state = self.hass.states.get(cuisine)
                 if state and state.state == "on":
                     _LOGGER.info("Réveil '%s' annulé — lever anticipé détecté", self.entry.title)
+                    # Borné au jour courant, sinon le réveil serait désactivé
+                    # définitivement après un simple passage en cuisine.
                     self._skip_prochain = True
+                    self._skip_date = now.date()
                     self._notify()
                     return
 
@@ -1290,8 +1322,11 @@ class ReveilCoordinator(DataUpdateCoordinator):
 
         self._reveil_en_cours = False
         self._skip_prochain = False
+        self._skip_date = None
         self._statut = STATUT_DONE
-        self._calculer_prochain()
+        # Réarme le déclencheur pour l'occurrence suivante : la planification
+        # est à usage unique depuis le passage en point-dans-le-temps.
+        self._planifier_trigger()
         self._log_event("Réveil arrêté")
         self._fire_event("smartwake_stopped", raison=raison)
         self._increment_stat("total_stops")
@@ -1369,18 +1404,21 @@ class ReveilCoordinator(DataUpdateCoordinator):
                     _LOGGER.error("Erreur notification AI custom: %s", exc)
 
     async def sauter_prochain(self) -> None:
-        """Saute le prochain réveil sans toucher la planification."""
-        self._skip_prochain = True
-        self._notify()
-        _LOGGER.info("Prochain réveil sauté pour '%s'", self.entry.title)
+        """Saute la prochaine occurrence sans toucher la planification."""
+        await self.set_skip(True)
+        _LOGGER.info(
+            "Réveil du %s sauté pour '%s'",
+            self._skip_date or "prochain jour actif", self.entry.title,
+        )
 
     async def reset(self) -> None:
         """Remet à zéro l'état (watchdog nocturne)."""
         self._snooze_count = 0
         self._skip_prochain = False
+        self._skip_date = None
         self._reveil_en_cours = False
         self._statut = STATUT_IDLE if self._actif else STATUT_INACTIF
-        self._calculer_prochain()
+        self._planifier_trigger()
         self._notify()
         _LOGGER.info("Reset du réveil '%s'", self.entry.title)
 
