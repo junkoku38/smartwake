@@ -54,7 +54,9 @@ Chaque champ a une **description** expliquant ce qu'il fait et pourquoi.
 - **Volets** : ouverture à position configurable (0-100%) si soleil levé
 - **Scène matin** : multi-sélection de lumières/scènes (couloir, cuisine, sdb)
 - **Notification mobile** actionnable avec boutons **Snooze** / **Stop**
-- **Briefing vocal (TTS)** : message personnalisable, séparé de la notification
+- **Briefing vocal (TTS)** : message personnalisable, séparé de la notification.
+  Nécessite une enceinte (`media_player`) **et** un moteur de synthèse
+  (`tts.*`) ; le moteur est détecté automatiquement s'il n'est pas précisé.
 
 ### Contrôles pendant la sonnerie
 - **Snooze** : durée configurable, nombre max de répétitions
@@ -78,25 +80,51 @@ Chaque champ a une **description** expliquant ce qu'il fait et pourquoi.
 > Les prompts utilisés sont **visibles** dans la description de chaque champ.
 > L'IA ne déclenche **jamais** la sonnerie. Fallback automatique si indisponible.
 
+## Entités créées
+
+Les `entity_id` sont dérivés du **nom du réveil** et du nom convivial de chaque
+entité. Pour un réveil nommé `reveil` :
+
+### Contrôles
+| Entité | Description |
+|--------|-------------|
+| `switch.reveil_actif` | Activation du réveil (état restauré au redémarrage) |
+| `switch.reveil_mode_vacances` | Suspend le réveil sans le désactiver |
+| `switch.reveil_saut_du_prochain` | Saute la prochaine occurrence — et permet de l'annuler |
+| `time.reveil_heure` | Heure de référence |
+| `time.reveil_heure_lundi` … `_dimanche` | Heure propre à chaque jour (mode `par_jour`) |
+| `select.reveil_jours` | `tous` / `semaine` / `weekend` / `personnalise` |
+| `select.reveil_mode_heure` | `unique` ou `par_jour` |
+| `button.reveil_declencher` / `_stop` / `_sauter_prochain` / `_reset` | Actions immédiates |
+
 ### Sondes supervisables (binary_sensor)
 | Entité | Description |
 |--------|-------------|
-| `sonne_aujourd_hui` | Le réveil doit sonner aujourd'hui (toutes conditions combinées) |
-| `reveil_en_cours` | Le cycle est actif (ringing / prewake / snoozed) |
-| `jour_ferie` | Jour férié (via capteur workday) |
-| `weekend` | Samedi ou dimanche |
-| `vacances_scolaires` | Vacances scolaires en cours (via calendar entity) |
+| `binary_sensor.reveil_sonne_aujourd_hui` | Le réveil doit sonner aujourd'hui (toutes conditions combinées) |
+| `binary_sensor.reveil_reveil_en_cours` | Le cycle est actif (ringing / prewake / snoozed) |
+| `binary_sensor.reveil_jour_ferie` | Jour férié (via capteur workday) |
+| `binary_sensor.reveil_weekend` | Samedi ou dimanche |
+| `binary_sensor.reveil_vacances_scolaires` | Vacances scolaires en cours (via calendar entity) |
 
-### Statistiques (sensors persistants)
+### État et statistiques (sensors)
 | Entité | Description |
 |--------|-------------|
-| `statut` | État (idle / prewake / ringing / snoozed / done) |
-| `prochain_reveil` | Date/heure du prochain réveil |
-| `snooze_count` | Snoozes utilisés (cycle en cours) |
-| `total_declenchements` | Déclenchements totaux (TOTAL_INCREASING) |
-| `total_snoozes` | Snoozes totaux (TOTAL_INCREASING) |
-| `total_stops` | Stops totaux (TOTAL_INCREASING) |
-| `dernier_reveil` | Dernier réveil (timestamp) |
+| `sensor.reveil_statut` | `idle` / `prewake` / `ringing` / `snoozed` / `done` / `inactif` |
+| `sensor.reveil_prochain_reveil` | Date/heure du prochain réveil (`timestamp`) |
+| `sensor.reveil_snooze_utilises` | Snoozes utilisés sur le cycle en cours |
+| `sensor.reveil_declenchements_total` | Déclenchements cumulés (`total_increasing`) |
+| `sensor.reveil_snoozes_total` | Snoozes cumulés (`total_increasing`) |
+| `sensor.reveil_stops_total` | Stops cumulés (`total_increasing`) |
+| `sensor.reveil_dernier_reveil` | Horodatage du dernier réveil |
+
+### Réglages (number)
+`snooze_min`, `max_snooze`, `pre_chauffage_min`, `aube_min`,
+`duree_eclairage_min`, `luminosite_max`, `escalade_min`, `volume_initial`,
+`volume_final`, `cafe_avant_min`.
+
+> `sensor.<nom>_prochain_reveil` est la **seule source fiable** de l'heure qui
+> sonnera : `time.<nom>_heure` n'est que l'heure de référence, et peut être
+> décalée par le mode `par_jour`, l'agenda adaptatif ou la phase de sommeil.
 
 ### Events HA (pour automatisations externes)
 | Event | Déclencheur |
