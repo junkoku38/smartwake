@@ -1235,3 +1235,95 @@ def test_aucun_destinataire_code_en_dur():
     assert not re.search(r"mobile_app_[a-z0-9_]+", src), (
         "aucun identifiant d'appareil personnel ne doit subsister"
     )
+
+
+# ── Régression : champs facultatifs laissés vides ──────────────
+
+def test_aucun_selecteur_avec_default_vide():
+    """Régression : « Entity is neither a valid entity ID nor a valid UUID ».
+
+    Les champs d'entité étaient déclarés `vol.Optional(KEY, default=... or "")`.
+    Les sélecteurs d'entité, de média, d'heure, de nombre et de liste refusent
+    tous la chaîne vide, et voluptuous applique le `default` même lorsque
+    l'utilisateur laisse le champ vide : impossible de ne pas renseigner un
+    équipement. Le pré-remplissage doit passer par `suggested_value`.
+    """
+    import ast
+
+    src = open("custom_components/smartwake/config_flow.py", encoding="utf-8").read()
+    fautifs = []
+    for node in ast.walk(ast.parse(src)):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
+            continue
+        if node.func.attr not in ("Optional", "Required"):
+            continue
+        for kw in node.keywords:
+            if kw.arg != "default":
+                continue
+            # default="" littéral, ou `data.get(...) or ""`
+            v = kw.value
+            vide = (isinstance(v, ast.Constant) and v.value == "") or (
+                isinstance(v, ast.BoolOp)
+                and isinstance(v.op, ast.Or)
+                and isinstance(v.values[-1], ast.Constant)
+                and v.values[-1].value == ""
+            )
+            if vide:
+                fautifs.append(node.lineno)
+
+    assert not fautifs, (
+        f"default vide aux lignes {fautifs} : un sélecteur refusera la chaîne vide"
+    )
+
+
+def test_options_utilisent_suggested_values():
+    """Le pré-remplissage doit passer par add_suggested_values_to_schema,
+    seule méthode qui n'intervient pas dans la validation."""
+    src = open("custom_components/smartwake/config_flow.py", encoding="utf-8").read()
+    assert "add_suggested_values_to_schema" in src
+
+
+def test_fusion_efface_les_champs_vides():
+    """Régression : la fusion `{**data, **user_input}` conservait l'ancienne
+    valeur d'un champ vidé, rendant impossible le retrait d'un équipement
+    une fois renseigné.
+
+    Une clé du schéma sans valeur par défaut, absente de la saisie, doit être
+    supprimée de la configuration ; les clés hors de la section doivent rester.
+    """
+    import voluptuous as vol
+
+    from custom_components.smartwake.config_flow import SmartWAKEOptionsFlow
+
+    class _Entry:
+        def __init__(self, data):
+            self.data = dict(data)
+            self.entry_id = "e1"
+            self.title = "Reveil"
+
+    class _CE:
+        def async_update_entry(self, entry, data=None, **kw):
+            entry.data = dict(data)
+
+    class _Hass:
+        def __init__(self):
+            self.config_entries = _CE()
+
+    entry = _Entry({"heure": "07:00", "chauffe_eau": "switch.ballon",
+                    "cafetiere": "switch.cafe"})
+    flow = SmartWAKEOptionsFlow(entry)
+    flow.hass = _Hass()
+
+    schema = vol.Schema({
+        vol.Optional("chauffe_eau"): str,
+        vol.Optional("cafetiere"): str,
+        vol.Optional("volets_soleil", default=True): bool,
+    })
+
+    # L'utilisateur vide chauffe_eau et conserve cafetiere
+    flow._enregistrer({"cafetiere": "switch.cafe", "volets_soleil": True}, schema)
+
+    assert "chauffe_eau" not in entry.data, "le champ vidé doit être effacé"
+    assert entry.data["cafetiere"] == "switch.cafe"
+    assert entry.data["heure"] == "07:00", "les clés hors section doivent rester"
+    assert entry.data["volets_soleil"] is True

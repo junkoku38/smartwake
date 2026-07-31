@@ -287,7 +287,9 @@ class SmartWAKEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
                 # Auto-détection des entités
                 detected = await _auto_detect_entities(self.hass)
-                self._data.update({k: v for k, v in detected.items() if v is not None})
+                # On écarte aussi les chaînes vides : une clé présente mais vide
+                # est refusée par les sélecteurs d'entité du menu d'options.
+                self._data.update({k: v for k, v in detected.items() if v})
 
                 # Valeurs par défaut
                 self._data.setdefault(CONF_SNOOZE_DUREE, DEFAULT_SNOOZE_DUREE)
@@ -338,6 +340,41 @@ class SmartWAKEOptionsFlow(config_entries.OptionsFlow):
     def _data(self) -> dict[str, Any]:
         return dict(self._config_entry.data)
 
+    def _formulaire(self, step_id: str, schema: vol.Schema) -> config_entries.FlowResult:
+        """Affiche une section, pré-remplie avec la configuration actuelle.
+
+        Les champs facultatifs ne portent pas de `default` : un sélecteur
+        d'entité, de média ou d'heure refuse la chaîne vide (« Entity is neither
+        a valid entity ID nor a valid UUID »), et un `default=""` était appliqué
+        même lorsque l'utilisateur laissait le champ vide. Le pré-remplissage
+        passe donc par `suggested_value`, qui n'intervient pas dans la
+        validation.
+        """
+        return self.async_show_form(
+            step_id=step_id,
+            data_schema=self.add_suggested_values_to_schema(schema, self._data),
+        )
+
+    def _enregistrer(
+        self, user_input: dict[str, Any], schema: vol.Schema
+    ) -> None:
+        """Fusionne la saisie avec la configuration existante.
+
+        Un champ facultatif vidé par l'utilisateur est absent de la saisie. Une
+        fusion naïve `{**data, **user_input}` conservait alors l'ancienne
+        valeur : il devenait impossible de retirer un équipement une fois
+        renseigné. Les clés sans valeur par défaut sont donc retirées avant
+        fusion, leur absence signifiant « effacé » et non « inchangé ».
+        """
+        fusion = self._data
+        for marqueur in schema.schema:
+            if not isinstance(marqueur, vol.Marker):
+                continue
+            if getattr(marqueur, "default", vol.UNDEFINED) is vol.UNDEFINED:
+                fusion.pop(marqueur.schema, None)
+        fusion.update(user_input)
+        self.hass.config_entries.async_update_entry(self._config_entry, data=fusion)
+
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.FlowResult:
@@ -358,14 +395,8 @@ class SmartWAKEOptionsFlow(config_entries.OptionsFlow):
     async def async_step_base(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.FlowResult:
-        data = self._config_entry.data
-        if user_input is not None:
-            new_data = {**data, **user_input}
-            self.hass.config_entries.async_update_entry(self._config_entry, data=new_data)
-            return await self.async_step_init()
-        return self.async_show_form(
-            step_id="base",
-            data_schema=vol.Schema({
+        data = self._data
+        schema = vol.Schema({
                 vol.Required(CONF_MODE_HEURE, default=data.get(CONF_MODE_HEURE, "unique")): selector.SelectSelector(
                     selector.SelectSelectorConfig(
                         options=[
@@ -376,11 +407,11 @@ class SmartWAKEOptionsFlow(config_entries.OptionsFlow):
                     )
                 ),
                 vol.Optional(CONF_HEURE, default=data.get(CONF_HEURE, "07:00")): selector.TimeSelector(),
-                vol.Optional(CONF_HEURE_LUNDI, default=data.get(CONF_HEURE_LUNDI, "07:00")): selector.TimeSelector(),
-                vol.Optional(CONF_HEURE_MARDI, default=data.get(CONF_HEURE_MARDI, "07:00")): selector.TimeSelector(),
-                vol.Optional(CONF_HEURE_MERCREDI, default=data.get(CONF_HEURE_MERCREDI, "07:00")): selector.TimeSelector(),
-                vol.Optional(CONF_HEURE_JEUDI, default=data.get(CONF_HEURE_JEUDI, "07:00")): selector.TimeSelector(),
-                vol.Optional(CONF_HEURE_VENDREDI, default=data.get(CONF_HEURE_VENDREDI, "07:00")): selector.TimeSelector(),
+                vol.Optional(CONF_HEURE_LUNDI): selector.TimeSelector(),
+                vol.Optional(CONF_HEURE_MARDI): selector.TimeSelector(),
+                vol.Optional(CONF_HEURE_MERCREDI): selector.TimeSelector(),
+                vol.Optional(CONF_HEURE_JEUDI): selector.TimeSelector(),
+                vol.Optional(CONF_HEURE_VENDREDI): selector.TimeSelector(),
                 vol.Optional(CONF_HEURE_SAMEDI, default=data.get(CONF_HEURE_SAMEDI, "08:00")): selector.TimeSelector(),
                 vol.Optional(CONF_HEURE_DIMANCHE, default=data.get(CONF_HEURE_DIMANCHE, "08:00")): selector.TimeSelector(),
                 vol.Required(CONF_JOURS, default=data.get(CONF_JOURS, "semaine")): selector.SelectSelector(
@@ -398,150 +429,132 @@ class SmartWAKEOptionsFlow(config_entries.OptionsFlow):
                 ),
                 vol.Optional(CONF_PONCTUEL, default=data.get(CONF_PONCTUEL, False)): bool,
                 vol.Optional(CONF_MODE_VACANCES, default=data.get(CONF_MODE_VACANCES, False)): bool,
-                vol.Optional(CONF_MODE_VACANCES_ENTITY, default=data.get(CONF_MODE_VACANCES_ENTITY) or ""): selector.EntitySelector(
+                vol.Optional(CONF_MODE_VACANCES_ENTITY): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain=["calendar", "input_boolean", "binary_sensor", "person"])
                 ),
-            }),
-        )
+        })
+        if user_input is not None:
+            self._enregistrer(user_input, schema)
+            return await self.async_step_init()
+        return self._formulaire("base", schema)
 
     async def async_step_musique(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.FlowResult:
-        data = self._config_entry.data
-        if user_input is not None:
-            new_data = {**data, **user_input}
-            self.hass.config_entries.async_update_entry(self._config_entry, data=new_data)
-            return await self.async_step_init()
-        return self.async_show_form(
-            step_id="musique",
-            data_schema=vol.Schema({
+        data = self._data
+        schema = vol.Schema({
                 vol.Required(CONF_MUSIQUE_ACTIVEE, default=data.get(CONF_MUSIQUE_ACTIVEE, True)): bool,
-                vol.Optional(CONF_MEDIA_PLAYER, default=data.get(CONF_MEDIA_PLAYER) or ""): _entity("media_player"),
+                vol.Optional(CONF_MEDIA_PLAYER): _entity("media_player"),
                 vol.Optional(CONF_PLAYLIST, default=data.get(CONF_PLAYLIST)): selector.MediaSelector(),
                 vol.Optional(CONF_VOLUME_INITIAL, default=data.get(CONF_VOLUME_INITIAL, DEFAULT_VOLUME_INITIAL)): _num(0.01, 1, 0.01),
                 vol.Optional(CONF_VOLUME_FINAL, default=data.get(CONF_VOLUME_FINAL, DEFAULT_VOLUME_FINAL)): _num(0.01, 1, 0.01),
                 vol.Optional(CONF_VOLUME_DUREE, default=data.get(CONF_VOLUME_DUREE, DEFAULT_VOLUME_DUREE)): _num(1, 30, 1, "min"),
-            }),
-        )
+        })
+        if user_input is not None:
+            self._enregistrer(user_input, schema)
+            return await self.async_step_init()
+        return self._formulaire("musique", schema)
 
     async def async_step_lumiere(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.FlowResult:
-        data = self._config_entry.data
-        if user_input is not None:
-            new_data = {**data, **user_input}
-            self.hass.config_entries.async_update_entry(self._config_entry, data=new_data)
-            return await self.async_step_init()
-        return self.async_show_form(
-            step_id="lumiere",
-            data_schema=vol.Schema({
+        data = self._data
+        schema = vol.Schema({
                 vol.Required(CONF_LUMIERE_ACTIVEE, default=data.get(CONF_LUMIERE_ACTIVEE, True)): bool,
-                vol.Optional(CONF_LUMIERE, default=data.get(CONF_LUMIERE) or ""): _entity("light"),
+                vol.Optional(CONF_LUMIERE): _entity("light"),
                 vol.Optional(CONF_BRIGHTNESS_MAX, default=data.get(CONF_BRIGHTNESS_MAX, DEFAULT_BRIGHTNESS_MAX)): _num(1, 255, 1),
                 vol.Optional(CONF_DUREE_PROGRESSIVE, default=data.get(CONF_DUREE_PROGRESSIVE, DEFAULT_DUREE_PROGRESSIVE)): _num(5, 60, 1, "min"),
                 vol.Optional(CONF_AUBE_MIN, default=data.get(CONF_AUBE_MIN, DEFAULT_AUBE_MIN)): _num(0, 60, 5, "min"),
-            }),
-        )
+        })
+        if user_input is not None:
+            self._enregistrer(user_input, schema)
+            return await self.async_step_init()
+        return self._formulaire("lumiere", schema)
 
     async def async_step_confort(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.FlowResult:
-        data = self._config_entry.data
-        if user_input is not None:
-            new_data = {**data, **user_input}
-            self.hass.config_entries.async_update_entry(self._config_entry, data=new_data)
-            return await self.async_step_init()
-        return self.async_show_form(
-            step_id="confort",
-            data_schema=vol.Schema({
+        data = self._data
+        schema = vol.Schema({
                 vol.Optional(CONF_PRECHAUFFE_MIN, default=data.get(CONF_PRECHAUFFE_MIN, DEFAULT_PRECHAUFFE_MIN)): _num(0, 120, 5, "min"),
-                vol.Optional(CONF_RADIATEUR, default=data.get(CONF_RADIATEUR) or ""): _entity("climate"),
-                vol.Optional(CONF_CHAUFFE_EAU, default=data.get(CONF_CHAUFFE_EAU) or ""): _entity("switch"),
-                vol.Optional(CONF_CAFETIERE, default=data.get(CONF_CAFETIERE) or ""): _entity("switch"),
+                vol.Optional(CONF_RADIATEUR): _entity("climate"),
+                vol.Optional(CONF_CHAUFFE_EAU): _entity("switch"),
+                vol.Optional(CONF_CAFETIERE): _entity("switch"),
                 vol.Optional(CONF_CAFETIERE_MIN, default=data.get(CONF_CAFETIERE_MIN, DEFAULT_CAFETIERE_MIN)): _num(0, 30, 1, "min"),
-                vol.Optional(CONF_VOLETS, default=data.get(CONF_VOLETS) or ""): _entity("cover"),
+                vol.Optional(CONF_VOLETS): _entity("cover"),
                 vol.Optional(CONF_VOLETS_POSITION, default=data.get(CONF_VOLETS_POSITION, 100)): _num(0, 100, 5, "%"),
                 vol.Optional(CONF_VOLETS_SOLEIL, default=data.get(CONF_VOLETS_SOLEIL, True)): bool,
                 vol.Optional(CONF_SCENE_MATIN_ENTITIES, default=data.get(CONF_SCENE_MATIN_ENTITIES, [])): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain=["light", "scene"], multiple=True)
                 ),
-            }),
-        )
+        })
+        if user_input is not None:
+            self._enregistrer(user_input, schema)
+            return await self.async_step_init()
+        return self._formulaire("confort", schema)
 
     async def async_step_intelligence(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.FlowResult:
-        data = self._config_entry.data
-        if user_input is not None:
-            new_data = {**data, **user_input}
-            self.hass.config_entries.async_update_entry(self._config_entry, data=new_data)
-            return await self.async_step_init()
-        return self.async_show_form(
-            step_id="intelligence",
-            data_schema=vol.Schema({
-                vol.Optional(CONF_PRESENCE, default=data.get(CONF_PRESENCE) or ""): _entity("person"),
-                vol.Optional(CONF_WORKDAY_SENSOR, default=data.get(CONF_WORKDAY_SENSOR) or ""): _entity("binary_sensor"),
+        data = self._data
+        schema = vol.Schema({
+                vol.Optional(CONF_PRESENCE): _entity("person"),
+                vol.Optional(CONF_WORKDAY_SENSOR): _entity("binary_sensor"),
                 vol.Optional(CONF_IGNORER_FERIES, default=data.get(CONF_IGNORER_FERIES, True)): bool,
-                vol.Optional(CONF_VACANCES_SCOLAIRES_CALENDAR, default=data.get(CONF_VACANCES_SCOLAIRES_CALENDAR) or ""): _entity("calendar"),
+                vol.Optional(CONF_VACANCES_SCOLAIRES_CALENDAR): _entity("calendar"),
                 vol.Optional(CONF_IGNORER_VACANCES_SCOLAIRE, default=data.get(CONF_IGNORER_VACANCES_SCOLAIRE, False)): bool,
-                vol.Optional(CONF_WITHINGS_BED_1, default=data.get(CONF_WITHINGS_BED_1) or ""): _entity("binary_sensor"),
-                vol.Optional(CONF_WITHINGS_BED_2, default=data.get(CONF_WITHINGS_BED_2) or ""): _entity("binary_sensor"),
-                vol.Optional(CONF_MOUVEMENT_SDB, default=data.get(CONF_MOUVEMENT_SDB) or ""): _entity("binary_sensor"),
+                vol.Optional(CONF_WITHINGS_BED_1): _entity("binary_sensor"),
+                vol.Optional(CONF_WITHINGS_BED_2): _entity("binary_sensor"),
+                vol.Optional(CONF_MOUVEMENT_SDB): _entity("binary_sensor"),
                 vol.Optional(CONF_MOUVEMENT_STOP, default=data.get(CONF_MOUVEMENT_STOP, False)): bool,
                 vol.Optional(CONF_LEVER_ANTICIPE, default=data.get(CONF_LEVER_ANTICIPE, False)): bool,
-                vol.Optional(CONF_MOUVEMENT_CUISINE, default=data.get(CONF_MOUVEMENT_CUISINE) or ""): _entity("binary_sensor"),
+                vol.Optional(CONF_MOUVEMENT_CUISINE): _entity("binary_sensor"),
                 vol.Optional(CONF_ESCALADE_INTELLIGENTE, default=data.get(CONF_ESCALADE_INTELLIGENTE, False)): bool,
-            }),
-        )
+        })
+        if user_input is not None:
+            self._enregistrer(user_input, schema)
+            return await self.async_step_init()
+        return self._formulaire("intelligence", schema)
 
     async def async_step_notification(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.FlowResult:
-        data = self._config_entry.data
-        if user_input is not None:
-            new_data = {**data, **user_input}
-            self.hass.config_entries.async_update_entry(self._config_entry, data=new_data)
-            return await self.async_step_init()
-        return self.async_show_form(
-            step_id="notification",
-            data_schema=vol.Schema({
+        data = self._data
+        schema = vol.Schema({
                 vol.Required(CONF_NOTIFICATION_ACTIVEE, default=data.get(CONF_NOTIFICATION_ACTIVEE, True)): bool,
-                vol.Optional(CONF_NOTIFY_DEVICE, default=data.get(CONF_NOTIFY_DEVICE) or ""): _entity("notify"),
+                vol.Optional(CONF_NOTIFY_DEVICE): _entity("notify"),
                 vol.Optional(CONF_NOTIF_TITRE, default=data.get(CONF_NOTIF_TITRE, DEFAULT_NOTIF_TITRE)): str,
                 vol.Optional(CONF_NOTIF_MESSAGE, default=data.get(CONF_NOTIF_MESSAGE, DEFAULT_NOTIF_MESSAGE)): str,
                 vol.Optional(CONF_TTS_ACTIVEE, default=data.get(CONF_TTS_ACTIVEE, False)): bool,
-                vol.Optional(CONF_TTS_ENTITY, default=data.get(CONF_TTS_ENTITY) or ""): _entity("media_player"),
-                vol.Optional(CONF_TTS_ENGINE, default=data.get(CONF_TTS_ENGINE) or ""): _entity("tts"),
+                vol.Optional(CONF_TTS_ENTITY): _entity("media_player"),
+                vol.Optional(CONF_TTS_ENGINE): _entity("tts"),
                 vol.Optional(CONF_TTS_MESSAGE, default=data.get(CONF_TTS_MESSAGE, DEFAULT_TTS_MESSAGE)): str,
                 vol.Optional(CONF_SNOOZE_DUREE, default=data.get(CONF_SNOOZE_DUREE, DEFAULT_SNOOZE_DUREE)): _num(1, 30, 1, "min"),
                 vol.Optional(CONF_SNOOZE_MAX, default=data.get(CONF_SNOOZE_MAX, DEFAULT_SNOOZE_MAX)): _num(0, 5, 1),
                 vol.Optional(CONF_ESCALADE_MIN, default=data.get(CONF_ESCALADE_MIN, DEFAULT_ESCALADE_MIN)): _num(1, 30, 1, "min"),
-            }),
-        )
+        })
+        if user_input is not None:
+            self._enregistrer(user_input, schema)
+            return await self.async_step_init()
+        return self._formulaire("notification", schema)
 
     async def async_step_ai(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.FlowResult:
-        data = self._config_entry.data
-        if user_input is not None:
-            new_data = {**data, **user_input}
-            self.hass.config_entries.async_update_entry(self._config_entry, data=new_data)
-            return await self.async_step_init()
-        return self.async_show_form(
-            step_id="ai",
-            data_schema=vol.Schema({
+        data = self._data
+        schema = vol.Schema({
                 vol.Optional(CONF_AI_BRIEFING, default=data.get(CONF_AI_BRIEFING, False)): bool,
-                vol.Optional(CONF_AI_TASK_ENTITY, default=data.get(CONF_AI_TASK_ENTITY) or ""): _entity("ai_task"),
+                vol.Optional(CONF_AI_TASK_ENTITY): _entity("ai_task"),
                 vol.Optional(CONF_AI_MUSIQUE_ADAPT, default=data.get(CONF_AI_MUSIQUE_ADAPT, False)): bool,
                 vol.Optional(CONF_AI_SUGGESTION_HEURE, default=data.get(CONF_AI_SUGGESTION_HEURE, False)): bool,
                 vol.Optional(CONF_AI_BILAN_HEBDO, default=data.get(CONF_AI_BILAN_HEBDO, False)): bool,
                 vol.Optional(CONF_AI_VERIF_LEVER, default=data.get(CONF_AI_VERIF_LEVER, False)): bool,
-                vol.Optional(CONF_AI_CAMERA_VERIF, default=data.get(CONF_AI_CAMERA_VERIF) or ""): _entity("camera"),
-                vol.Optional(CONF_WEATHER_ENTITY, default=data.get(CONF_WEATHER_ENTITY) or ""): _entity("weather"),
-                vol.Optional(CONF_TRAJET_SENSOR, default=data.get(CONF_TRAJET_SENSOR) or ""): _entity("sensor"),
-                vol.Optional(CONF_BATTERIE_SENSOR, default=data.get(CONF_BATTERIE_SENSOR) or ""): _entity("sensor"),
+                vol.Optional(CONF_AI_CAMERA_VERIF): _entity("camera"),
+                vol.Optional(CONF_WEATHER_ENTITY): _entity("weather"),
+                vol.Optional(CONF_TRAJET_SENSOR): _entity("sensor"),
+                vol.Optional(CONF_BATTERIE_SENSOR): _entity("sensor"),
                 vol.Optional(CONF_AI_CUSTOM_ENABLED, default=data.get(CONF_AI_CUSTOM_ENABLED, False)): bool,
-                vol.Optional(CONF_AI_CUSTOM_PROMPT, default=data.get(CONF_AI_CUSTOM_PROMPT, "")): selector.TextSelector(
+                vol.Optional(CONF_AI_CUSTOM_PROMPT): selector.TextSelector(
                     selector.TextSelectorConfig(multiline=True)
                 ),
                 vol.Optional(CONF_AI_CUSTOM_TRIGGER, default=data.get(CONF_AI_CUSTOM_TRIGGER, "on_stop")): selector.SelectSelector(
@@ -557,5 +570,8 @@ class SmartWAKEOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional(CONF_AI_CUSTOM_ENTITIES, default=data.get(CONF_AI_CUSTOM_ENTITIES, [])): selector.EntitySelector(
                     selector.EntitySelectorConfig(multiple=True)
                 ),
-            }),
-        )
+        })
+        if user_input is not None:
+            self._enregistrer(user_input, schema)
+            return await self.async_step_init()
+        return self._formulaire("ai", schema)
