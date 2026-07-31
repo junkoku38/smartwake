@@ -35,6 +35,14 @@ from .const import (
     CONF_ESCALADE_INTELLIGENTE,
     CONF_ESCALADE_MIN,
     CONF_HEURE,
+    CONF_HEURE_LUNDI,
+    CONF_HEURE_MARDI,
+    CONF_HEURE_MERCREDI,
+    CONF_HEURE_JEUDI,
+    CONF_HEURE_VENDREDI,
+    CONF_HEURE_SAMEDI,
+    CONF_HEURE_DIMANCHE,
+    CONF_MODE_HEURE,
     CONF_IGNORER_FERIES,
     CONF_IGNORER_VACANCES_SCOLAIRE,
     CONF_VACANCES_SCOLAIRES_CALENDAR,
@@ -42,6 +50,8 @@ from .const import (
     CONF_AI_MUSIQUE_ADAPT,
     CONF_AI_SUGGESTION_HEURE,
     CONF_AI_VERIF_LEVER,
+    CONF_AI_CUSTOM_ENABLED,
+    CONF_AI_CUSTOM_TASKS,
     CONF_ADAPTATIF_AGENDA,
     CONF_AGENDA_ENTITY,
     CONF_AGENDA_MARGE_MIN,
@@ -57,6 +67,7 @@ from .const import (
     CONF_MOUVEMENT_STOP,
     CONF_MEDIA_PLAYER,
     CONF_MODE_VACANCES,
+    CONF_MODE_VACANCES_ENTITY,
     CONF_MUSIQUE_ACTIVEE,
     CONF_NOTIF_MESSAGE,
     CONF_NOTIF_TITRE,
@@ -480,8 +491,14 @@ class ReveilCoordinator(DataUpdateCoordinator):
         cfg = self.entry.data
         if not self._actif:
             return False
+        # Mode vacances : booléen OU entité (calendar/input_boolean/binary_sensor/person)
         if cfg.get(CONF_MODE_VACANCES, False):
             return False
+        vac_entity = cfg.get(CONF_MODE_VACANCES_ENTITY)
+        if vac_entity:
+            state = self.hass.states.get(vac_entity)
+            if state and state.state == "on":
+                return False
         if self._skip_prochain:
             return False
 
@@ -527,27 +544,51 @@ class ReveilCoordinator(DataUpdateCoordinator):
 
     def _calculer_prochain(self) -> None:
         cfg = self.entry.data
-        heure = _parse_heure(cfg.get(CONF_HEURE, "07:00"))
-        mode = cfg.get(CONF_JOURS, "semaine")
+        mode_jours = cfg.get(CONF_JOURS, "semaine")
         jours_perso = cfg.get(CONF_JOURS_PERSO, [])
-        jours = _jours_actifs(mode, jours_perso)
+        jours = _jours_actifs(mode_jours, jours_perso)
         now = dt_util.now()
 
-        # Heure adaptative via agenda ?
-        heure_adapt = heure
-        if cfg.get(CONF_ADAPTATIF_AGENDA, False) and cfg.get(CONF_AGENDA_ENTITY):
-            heure_adapt = self._heure_adaptative_agenda(heure, now, jours) or heure
+        # Heure par jour ou heure unique ?
+        mode_heure = cfg.get(CONF_MODE_HEURE, "unique")
+        heures_par_jour = {
+            0: cfg.get(CONF_HEURE_LUNDI),
+            1: cfg.get(CONF_HEURE_MARDI),
+            2: cfg.get(CONF_HEURE_MERCREDI),
+            3: cfg.get(CONF_HEURE_JEUDI),
+            4: cfg.get(CONF_HEURE_VENDREDI),
+            5: cfg.get(CONF_HEURE_SAMEDI),
+            6: cfg.get(CONF_HEURE_DIMANCHE),
+        }
 
-        # Phase de sommeil : fenêtre ±N min autour de l'heure
-        if cfg.get(CONF_SOMMEIL_PHASE, False) and cfg.get(CONF_WITHINGS_BED_1):
-            heure_adapt = self._heure_phase_sommeil(heure_adapt, cfg)
+        heure_defaut = _parse_heure(cfg.get(CONF_HEURE, "07:00"))
 
         for i in range(8):
-            candidate = now + timedelta(days=i)
-            candidate = candidate.replace(
+            candidate_date = now + timedelta(days=i)
+            jour_semaine = candidate_date.weekday()
+
+            if jour_semaine not in jours:
+                continue
+
+            # Heure pour ce jour
+            if mode_heure == "par_jour" and heures_par_jour.get(jour_semaine):
+                heure = _parse_heure(heures_par_jour[jour_semaine])
+            else:
+                heure = heure_defaut
+
+            # Heure adaptative via agenda ?
+            heure_adapt = heure
+            if cfg.get(CONF_ADAPTATIF_AGENDA, False) and cfg.get(CONF_AGENDA_ENTITY):
+                heure_adapt = self._heure_adaptative_agenda(heure, now, jours) or heure
+
+            # Phase de sommeil : fenêtre ±N min autour de l'heure
+            if cfg.get(CONF_SOMMEIL_PHASE, False) and cfg.get(CONF_WITHINGS_BED_1):
+                heure_adapt = self._heure_phase_sommeil(heure_adapt, cfg)
+
+            candidate = candidate_date.replace(
                 hour=heure_adapt.hour, minute=heure_adapt.minute, second=0, microsecond=0
             )
-            if candidate.weekday() in jours and candidate > now:
+            if candidate > now:
                 # Vérifier férié si applicable
                 if cfg.get(CONF_IGNORER_FERIES, True) and cfg.get(CONF_WORKDAY_SENSOR):
                     self._prochain = candidate
@@ -632,16 +673,35 @@ class ReveilCoordinator(DataUpdateCoordinator):
         if self._prochain is None:
             return
 
-        heure = _parse_heure(self.entry.data.get(CONF_HEURE, "07:00"))
+        cfg = self.entry.data
+        mode_heure = cfg.get(CONF_MODE_HEURE, "unique")
 
-        # Trigger principal du réveil (chaque jour à l'heure, filtrage dans le callback)
-        self._cancel_trigger = async_track_time_change(
-            self.hass,
-            self._trigger_callback,
-            hour=heure.hour,
-            minute=heure.minute,
-            second=0,
-        )
+        # Collecter toutes les heures distinctes à déclencher
+        heures_distinctes = set()
+        if mode_heure == "par_jour":
+            for key in (CONF_HEURE_LUNDI, CONF_HEURE_MARDI, CONF_HEURE_MERCREDI,
+                        CONF_HEURE_JEUDI, CONF_HEURE_VENDREDI, CONF_HEURE_SAMEDI,
+                        CONF_HEURE_DIMANCHE):
+                h = cfg.get(key)
+                if h:
+                    try:
+                        heures_distinctes.add(_parse_heure(h))
+                    except (ValueError, IndexError):
+                        pass
+        if not heures_distinctes:
+            heures_distinctes = {_parse_heure(cfg.get(CONF_HEURE, "07:00"))}
+
+        # Trigger principal du réveil — un trigger par heure distincte
+        triggers = []
+        for heure in heures_distinctes:
+            triggers.append(async_track_time_change(
+                self.hass,
+                self._trigger_callback,
+                hour=heure.hour,
+                minute=heure.minute,
+                second=0,
+            ))
+        self._cancel_trigger = lambda: [t() for t in triggers] if triggers else None
 
         # Trigger pré-réveil
         prechauffe = self.entry.data.get(CONF_PRECHAUFFE_MIN, DEFAULT_PRECHAUFFE_MIN)
@@ -820,6 +880,10 @@ class ReveilCoordinator(DataUpdateCoordinator):
         # Scène matin (éclairage cuisine + couloir + autres pièces)
         if cfg.get(CONF_SCENES_MATIN, False):
             await self._activer_scene_matin()
+
+        # AI task personnalisée (au déclenchement)
+        if cfg.get(CONF_AI_CUSTOM_ENABLED) or cfg.get(CONF_AI_CUSTOM_TASKS):
+            self.hass.async_create_task(self._run_custom_ai("on_wake"))
 
         # Escalade intelligente (progressive au lieu de tout à 100%)
         if cfg.get(CONF_ESCALADE_INTELLIGENTE, False):
@@ -1212,6 +1276,10 @@ class ReveilCoordinator(DataUpdateCoordinator):
         if cfg.get(CONF_AI_VERIF_LEVER):
             self.hass.async_create_task(self._verif_lever_ia())
 
+        # AI task personnalisée (au stop)
+        if cfg.get(CONF_AI_CUSTOM_ENABLED) or cfg.get(CONF_AI_CUSTOM_TASKS):
+            self.hass.async_create_task(self._run_custom_ai("on_stop"))
+
         self._reveil_en_cours = False
         self._skip_prochain = False
         self._statut = STATUT_DONE
@@ -1269,6 +1337,27 @@ class ReveilCoordinator(DataUpdateCoordinator):
             _LOGGER.info("Vérif IA: personne encore au lit — escalade")
             self._log_event("Vérif IA: personne encore au lit — escalade")
             await self._escalade(0)  # escalade immédiate
+
+    async def _run_custom_ai(self, trigger: str) -> None:
+        """Exécute les AI tasks personnalisées et notifie les résultats."""
+        from .ai import run_custom_ai_task
+        cfg = self.entry.data
+        results = await run_custom_ai_task(self.hass, cfg, trigger)
+        if not results:
+            return
+        _LOGGER.info("AI tasks custom (%s): %d résultat(s)", trigger, len(results))
+        self._log_event(f"AI custom ({trigger}): {len(results)} tâche(s) exécutée(s)")
+        # Notifier chaque résultat
+        notify = cfg.get(CONF_NOTIFY_DEVICE)
+        for msg in results:
+            if notify:
+                try:
+                    await self.hass.services.async_call(
+                        "notify", "send_message",
+                        {"entity_id": notify, "title": "🤖 SmartWAKE IA", "message": msg},
+                    )
+                except Exception as exc:
+                    _LOGGER.error("Erreur notification AI custom: %s", exc)
 
     async def sauter_prochain(self) -> None:
         """Saute le prochain réveil sans toucher la planification."""

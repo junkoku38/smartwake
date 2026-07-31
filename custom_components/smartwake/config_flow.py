@@ -20,6 +20,10 @@ from .const import (
     CONF_AI_BILAN_HEBDO,
     CONF_AI_BRIEFING,
     CONF_AI_CAMERA_VERIF,
+    CONF_AI_CUSTOM_ENABLED,
+    CONF_AI_CUSTOM_PROMPT,
+    CONF_AI_CUSTOM_TRIGGER,
+    CONF_AI_CUSTOM_ENTITIES,
     CONF_AI_MUSIQUE_ADAPT,
     CONF_AI_SUGGESTION_HEURE,
     CONF_AI_TASK_ENTITY,
@@ -48,6 +52,7 @@ from .const import (
     CONF_MODE_VACANCES,
     CONF_MUSIQUE_ACTIVEE,
     CONF_NOTIF_MESSAGE,
+    CONF_TTS_MESSAGE,
     CONF_NOTIF_TITRE,
     CONF_NOTIFICATION_ACTIVEE,
     CONF_NOTIFY_DEVICE,
@@ -57,6 +62,7 @@ from .const import (
     CONF_PRESENCE,
     CONF_RADIATEUR,
     CONF_SCENE_MATIN_ENTITIES,
+    CONF_VOLETS_POSITION,
     CONF_SCENES_MATIN,
     CONF_SKIP_PROCHAIN,
     CONF_SNOOZE_DUREE,
@@ -86,6 +92,7 @@ from .const import (
     DEFAULT_ESCALADE_MIN,
     DEFAULT_NOTIF_MESSAGE,
     DEFAULT_NOTIF_TITRE,
+    DEFAULT_TTS_MESSAGE,
     DEFAULT_NOTIFY_DEVICE,
     DEFAULT_PLAYLIST,
     DEFAULT_PRECHAUFFE_MIN,
@@ -348,7 +355,23 @@ class SmartWAKEOptionsFlow(config_entries.OptionsFlow):
         return self.async_show_form(
             step_id="base",
             data_schema=vol.Schema({
-                vol.Required(CONF_HEURE, default=data.get(CONF_HEURE, "07:00")): selector.TimeSelector(),
+                vol.Required(CONF_MODE_HEURE, default=data.get(CONF_MODE_HEURE, "unique")): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            selector.SelectOptionDict(value="unique", label="Heure unique (même heure tous les jours)"),
+                            selector.SelectOptionDict(value="par_jour", label="Heure par jour (différente selon le jour)"),
+                        ],
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Optional(CONF_HEURE, default=data.get(CONF_HEURE, "07:00")): selector.TimeSelector(),
+                vol.Optional(CONF_HEURE_LUNDI, default=data.get(CONF_HEURE_LUNDI, "07:00")): selector.TimeSelector(),
+                vol.Optional(CONF_HEURE_MARDI, default=data.get(CONF_HEURE_MARDI, "07:00")): selector.TimeSelector(),
+                vol.Optional(CONF_HEURE_MERCREDI, default=data.get(CONF_HEURE_MERCREDI, "07:00")): selector.TimeSelector(),
+                vol.Optional(CONF_HEURE_JEUDI, default=data.get(CONF_HEURE_JEUDI, "07:00")): selector.TimeSelector(),
+                vol.Optional(CONF_HEURE_VENDREDI, default=data.get(CONF_HEURE_VENDREDI, "07:00")): selector.TimeSelector(),
+                vol.Optional(CONF_HEURE_SAMEDI, default=data.get(CONF_HEURE_SAMEDI, "08:00")): selector.TimeSelector(),
+                vol.Optional(CONF_HEURE_DIMANCHE, default=data.get(CONF_HEURE_DIMANCHE, "08:00")): selector.TimeSelector(),
                 vol.Required(CONF_JOURS, default=data.get(CONF_JOURS, "semaine")): selector.SelectSelector(
                     selector.SelectSelectorConfig(
                         options=[selector.SelectOptionDict(value=k, label=v) for k, v in JOURS_OPTIONS.items()],
@@ -365,6 +388,9 @@ class SmartWAKEOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional(CONF_PONCTUEL, default=data.get(CONF_PONCTUEL, False)): bool,
                 vol.Optional(CONF_SKIP_PROCHAIN, default=data.get(CONF_SKIP_PROCHAIN, False)): bool,
                 vol.Optional(CONF_MODE_VACANCES, default=data.get(CONF_MODE_VACANCES, False)): bool,
+                vol.Optional(CONF_MODE_VACANCES_ENTITY, default=data.get(CONF_MODE_VACANCES_ENTITY) or ""): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain=["calendar", "input_boolean", "binary_sensor", "person"])
+                ),
             }),
         )
 
@@ -424,8 +450,11 @@ class SmartWAKEOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional(CONF_CAFETIERE, default=data.get(CONF_CAFETIERE) or ""): _entity("switch"),
                 vol.Optional(CONF_CAFETIERE_MIN, default=data.get(CONF_CAFETIERE_MIN, DEFAULT_CAFETIERE_MIN)): _num(0, 30, 1, "min"),
                 vol.Optional(CONF_VOLETS, default=data.get(CONF_VOLETS) or ""): _entity("cover"),
+                vol.Optional(CONF_VOLETS_POSITION, default=data.get(CONF_VOLETS_POSITION, 100)): _num(0, 100, 5, "%"),
                 vol.Optional(CONF_VOLETS_SOLEIL, default=data.get(CONF_VOLETS_SOLEIL, True)): bool,
-                vol.Optional(CONF_SCENES_MATIN, default=data.get(CONF_SCENES_MATIN, False)): bool,
+                vol.Optional(CONF_SCENE_MATIN_ENTITIES, default=data.get(CONF_SCENE_MATIN_ENTITIES, [])): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain=["light", "scene"], multiple=True)
+                ),
             }),
         )
 
@@ -467,11 +496,12 @@ class SmartWAKEOptionsFlow(config_entries.OptionsFlow):
             step_id="notification",
             data_schema=vol.Schema({
                 vol.Required(CONF_NOTIFICATION_ACTIVEE, default=data.get(CONF_NOTIFICATION_ACTIVEE, True)): bool,
-                vol.Optional(CONF_NOTIFY_DEVICE, default=data.get(CONF_NOTIFY_DEVICE, DEFAULT_NOTIFY_DEVICE)): str,
+                vol.Optional(CONF_NOTIFY_DEVICE, default=data.get(CONF_NOTIFY_DEVICE) or ""): _entity("notify"),
                 vol.Optional(CONF_NOTIF_TITRE, default=data.get(CONF_NOTIF_TITRE, DEFAULT_NOTIF_TITRE)): str,
                 vol.Optional(CONF_NOTIF_MESSAGE, default=data.get(CONF_NOTIF_MESSAGE, DEFAULT_NOTIF_MESSAGE)): str,
                 vol.Optional(CONF_TTS_ACTIVEE, default=data.get(CONF_TTS_ACTIVEE, False)): bool,
                 vol.Optional(CONF_TTS_ENTITY, default=data.get(CONF_TTS_ENTITY) or ""): _entity("media_player"),
+                vol.Optional(CONF_TTS_MESSAGE, default=data.get(CONF_TTS_MESSAGE, DEFAULT_TTS_MESSAGE)): str,
                 vol.Optional(CONF_SNOOZE_DUREE, default=data.get(CONF_SNOOZE_DUREE, DEFAULT_SNOOZE_DUREE)): _num(1, 30, 1, "min"),
                 vol.Optional(CONF_SNOOZE_MAX, default=data.get(CONF_SNOOZE_MAX, DEFAULT_SNOOZE_MAX)): _num(0, 5, 1),
                 vol.Optional(CONF_ESCALADE_MIN, default=data.get(CONF_ESCALADE_MIN, DEFAULT_ESCALADE_MIN)): _num(1, 30, 1, "min"),
@@ -499,5 +529,22 @@ class SmartWAKEOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional(CONF_WEATHER_ENTITY, default=data.get(CONF_WEATHER_ENTITY) or ""): _entity("weather"),
                 vol.Optional(CONF_TRAJET_SENSOR, default=data.get(CONF_TRAJET_SENSOR) or ""): _entity("sensor"),
                 vol.Optional(CONF_BATTERIE_SENSOR, default=data.get(CONF_BATTERIE_SENSOR) or ""): _entity("sensor"),
+                vol.Optional(CONF_AI_CUSTOM_ENABLED, default=data.get(CONF_AI_CUSTOM_ENABLED, False)): bool,
+                vol.Optional(CONF_AI_CUSTOM_PROMPT, default=data.get(CONF_AI_CUSTOM_PROMPT, "")): selector.TextSelector(
+                    selector.TextSelectorConfig(multiline=True)
+                ),
+                vol.Optional(CONF_AI_CUSTOM_TRIGGER, default=data.get(CONF_AI_CUSTOM_TRIGGER, "on_stop")): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            selector.SelectOptionDict(value="on_wake", label="Au déclenchement du réveil"),
+                            selector.SelectOptionDict(value="on_stop", label="Au Stop (quand vous vous levez)"),
+                            selector.SelectOptionDict(value="on_evening", label="Le soir (21:30)"),
+                        ],
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Optional(CONF_AI_CUSTOM_ENTITIES, default=data.get(CONF_AI_CUSTOM_ENTITIES, [])): selector.EntitySelector(
+                    selector.EntitySelectorConfig(multiple=True)
+                ),
             }),
         )
