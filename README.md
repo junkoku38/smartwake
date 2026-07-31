@@ -1,4 +1,8 @@
-# SmartWAKE — Intégration Home Assistant
+<img src="custom_components/smartwake/brand/logo.png" alt="SmartWAKE" height="72">
+
+Réveil progressif pour Home Assistant : lumière, musique, volets et chauffage,
+avec assistance IA optionnelle.
+
 
 <p align="center">
   <img src="https://img.shields.io/badge/Home%20Assistant-2024.1%2B-41BDF5?logo=home-assistant&logoColor=white" />
@@ -174,6 +178,18 @@ Dans le doute, le champ reste vide.
 **Les volets ne sont jamais pré-remplis**, même s'il n'en existe qu'un seul :
 il peut équiper une autre pièce que la chambre, et une ouverture non voulue au
 réveil se remarque tard. Le champ est à renseigner soi-même.
+
+## Icône dans Home Assistant
+
+Les images de marque sont embarquées dans `custom_components/smartwake/brand/`
+et priment sur le CDN `brands.home-assistant.io`. Aucune démarche n'est
+nécessaire — l'icône apparaît dans la page des intégrations et sur l'appareil.
+
+> Ce mécanisme requiert **Home Assistant 2026.3 ou supérieur**. En deçà, HA
+> affiche l'icône générique des intégrations personnalisées ; tout le reste
+> fonctionne normalement.
+
+Les images sont régénérables : `python3 scripts/generer_icones.py`.
 
 ## Installation
 
