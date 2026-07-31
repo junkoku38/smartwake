@@ -3,49 +3,80 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Home%20Assistant-2024.1%2B-41BDF5?logo=home-assistant&logoColor=white" />
   <img src="https://img.shields.io/badge/HACS-Custom-41BDF5?logo=home-assistant-community-store&logoColor=white" />
-  <img src="https://img.shields.io/badge/version-2.2.0-blue" />
+  <img src="https://img.shields.io/badge/version-2.6.0-blue" />
   <img src="https://img.shields.io/badge/python-3.12%2B-yellow" />
   <img src="https://img.shields.io/badge/security-bandit%200%20finding-green" />
   <img src="https://img.shields.io/badge/security-semgrep%200%20finding-green" />
+  <img src="https://img.shields.io/badge/tests-40%20passed-green" />
 </p>
 
-Un réveil domotique complet qui ne se contente pas de sonner : il **prépare la maison** au réveil (chauffage, lumière progressive, musique, volets, café), s'adapte au **calendrier** (jours fériés, vacances scolaires, vacances) et à la **présence réelle** des occupants.
+Un réveil domotique complet qui ne se contente pas de sonner : il **prépare la maison** au réveil (chauffage, lumière progressive, musique, volets, café), s'adapte au **calendrier** (jours fériés, vacances scolaires, vacances) et à la **présence réelle** des occupants. Optionnellement enrichi par l'**IA** (briefing, musique adaptative, suggestion d'heure, bilan de sommeil).
+
+## Configuration simplifiée
+
+**1 étape pour créer un réveil** (30 secondes) :
+- Nom (accents acceptés : Réveil, Élève...)
+- Heure
+- Jours actifs
+- **Preset** : 🎵 Simple, 🌅 Confort, 🏠 Complet
+
+**Menu Configurer** (7 sections, modifiable après) :
+- **Base** — heure, heure par jour, jours, ponctuel, skip, vacances
+- **🎵 Musique** — MediaSelector (playlist/radio/favoris), volume progressif
+- **💡 Lumière** — aube progressive, luminosité, durée
+- **🏠 Confort** — chauffage, cafetière, volets (position %), scène matin
+- **🧠 Intelligence** — présence, jours fériés, Withings, mouvement, escalade
+- **📱 Notification** — notify (EntitySelector), TTS (message séparé), snooze
+- **🤖 AI Task** — briefing, musique adaptative, suggestion, **tasks personnalisées**
+
+Chaque champ a une **description** expliquant ce qu'il fait et pourquoi.
 
 ## Fonctionnalités
 
 ### Planification
 - **Multi-alarmes** : plusieurs réveils indépendants (semaine, week-end, sport, enfants…)
-- **Heure configurable** par alarme
-- **Sélection des jours** : lundi → dimanche, cases indépendantes, ou modes prédéfinis (tous / semaine / weekend / personnalisé)
-- **Jours fériés** : désactivation automatique via capteur `workday` (calendrier officiel français, option Alsace-Moselle)
-- **Vacances scolaires** : désactivation via un `calendar` entity (ICS de l'Éducation nationale)
-- **Mode vacances** global qui suspend le réveil
+- **Heure unique** ou **heure par jour** : lundi 8h, mardi 9h, weekend 10h — un seul réveil suffit
+- **Jours** : tous / semaine / weekend / personnalisé (cases indépendantes)
+- **Jours fériés** : désactivation via capteur `workday` (calendrier officiel français)
+- **Vacances scolaires** : désactivation via `calendar` entity (ICS Éducation nationale)
+- **Mode vacances** : booléen OU entité (calendar, input_boolean, person) — automatique
 - **Skip une fois** : sauter le prochain réveil sans toucher à la planification
 - **Alarme ponctuelle** : réveil unique auto-désactivé après déclenchement
 
 ### Pré-réveil (la maison se prépare avant vous)
-- **Chauffage** : passage des radiateurs / thermostat en mode confort **X minutes avant**
+- **Chauffage** : radiateur/thermostat en mode confort **X minutes avant**
 - **Chauffe-eau / sèche-serviettes** : anticipation salle de bain
-- **Simulation d'aube** : montée progressive de la luminosité sur 15–30 min
-- **Cafetière / bouilloire** : prise connectée ON à H−10 min
+- **Simulation d'aube** : montée progressive de la luminosité sur 5–60 min
+- **Cafetière / bouilloire** : prise connectée ON à H−X min
 
 ### Réveil (à l'heure H)
-- **Musique** avec volume progressif (10 % → 40 % sur 5 min)
-- **Volets roulants** : ouverture (totale ou partielle selon saison/lever du soleil)
-- **Lumière** : autres pièces allumées en scène "matin"
+- **Musique** via MediaSelector (Spotify, radio, favoris) avec volume progressif
+- **Volets** : ouverture à position configurable (0-100%) si soleil levé
+- **Scène matin** : multi-sélection de lumières/scènes (couloir, cuisine, sdb)
 - **Notification mobile** actionnable avec boutons **Snooze** / **Stop**
-- **Briefing vocal (TTS)** : météo du jour (optionnel)
+- **Briefing vocal (TTS)** : message personnalisable, séparé de la notification
 
 ### Contrôles pendant la sonnerie
 - **Snooze** : durée configurable, nombre max de répétitions
-- **Stop** : notification actionnable, bouton physique, ou détection de mouvement salle de bain
-- **Escalade** : si pas de Stop après N minutes → volume max + toutes lumières à 100 %
+- **Stop** : notification actionnable, bouton, ou détection de mouvement salle de bain
+- **Escalade** : progressive (3 niveaux : 60% → 80% → 100%) ou classique (tout à 100%)
 
 ### Intelligence contextuelle
-- **Présence** : ne pas sonner si personne à la maison
-- **Lever anticipé** : si mouvement détecté dans la cuisine avant l'heure → annuler la sonnerie
-- **Sommeil** : intégration capteurs Withings (au lit / pas au lit)
-- **Saison** : ouvrir les volets seulement si le soleil est levé
+- **Présence** : ne sonne pas si la personne n'est pas à la maison
+- **Lever anticipé** : mouvement cuisine avant l'heure → annule la sonnerie
+- **Withings** : ne sonne pas si personne au lit
+- **Escalade intelligente** : 3 niveaux progressifs au lieu de tout à 100% d'un coup
+
+### AI Task (HA ≥ 2025.8, optionnel)
+- **Briefing matinal IA** : briefing naturel (météo, agenda, trajet, batterie)
+- **Musique adaptative** : l'IA choisit la playlist selon la météo
+- **Suggestion d'heure du soir** : notification Accepter/Refuser (l'IA propose, vous validez)
+- **Bilan de sommeil hebdomadaire** : synthèse + recommandations (service `smartwake.bilan_hebdo`)
+- **Vérification lever caméra** : 10 min après le Stop, escalade si encore au lit
+- **AI tasks personnalisées** : votre propre prompt + déclencheur + entités + notification
+
+> Les prompts utilisés sont **visibles** dans la description de chaque champ.
+> L'IA ne déclenche **jamais** la sonnerie. Fallback automatique si indisponible.
 
 ### Sondes supervisables (binary_sensor)
 | Entité | Description |
@@ -56,20 +87,42 @@ Un réveil domotique complet qui ne se contente pas de sonner : il **prépare la
 | `weekend` | Samedi ou dimanche |
 | `vacances_scolaires` | Vacances scolaires en cours (via calendar entity) |
 
-### AI Task (HA ≥ 2025.8, optionnel)
-- **Briefing matinal IA** : rédige un briefing naturel (météo, agenda, trajet, batterie) au lieu d'un TTS robotique
-- **Musique adaptative** : l'IA choisit la playlist selon la météo et le contexte
-- **Suggestion d'heure du soir** : notification actionnable Accepter/Refuser (l'IA propose, l'utilisateur valide)
-- **Bilan de sommeil hebdomadaire** : synthèse de la semaine + recommandations (service `smartwake.bilan_hebdo`)
-- **Vérification lever caméra** : 10 min après le Stop, l'IA vérifie si vous êtes levé → escalade si encore au lit
+### Statistiques (sensors persistants)
+| Entité | Description |
+|--------|-------------|
+| `statut` | État (idle / prewake / ringing / snoozed / done) |
+| `prochain_reveil` | Date/heure du prochain réveil |
+| `snooze_count` | Snoozes utilisés (cycle en cours) |
+| `total_declenchements` | Déclenchements totaux (TOTAL_INCREASING) |
+| `total_snoozes` | Snoozes totaux (TOTAL_INCREASING) |
+| `total_stops` | Stops totaux (TOTAL_INCREASING) |
+| `dernier_reveil` | Dernier réveil (timestamp) |
 
-> ⚠️ L'IA ne déclenche **jamais** la sonnerie. Fallback automatique si indisponible.
+### Events HA (pour automatisations externes)
+| Event | Déclencheur |
+|-------|------------|
+| `smartwake_triggered` | Réveil déclenché |
+| `smartwake_stopped` | Réveil arrêté (raison : manual/snooze_max/mouvement_sdb) |
+| `smartwake_snoozed` | Snooze activé |
+| `smartwake_escalade` | Escalade (level : doux/moyen/max) |
+| `smartwake_prewake` | Phase pré-réveil |
+| `smartwake_activated` | Réveil activé |
+| `smartwake_deactivated` | Réveil désactivé |
+| `smartwake_anomalie` | Anomalie détectée (type) |
 
 ### Robustesse
-- **Watchdog** : vérifie l'armement au démarrage HA
-- **Logbook** : journalise les événements (activation, déclenchement, snooze, stop, escalade)
-- **Notification actions** : capte `REVEIL_SNOOZE` / `REVEIL_STOP` depuis l'app mobile
-- **Dashboard auto** : carte Lovelace injectée automatiquement dans Overview
+- **Watchdog** : vérifie l'armement au démarrage HA + détecte les redémarrages nocturnes
+- **Logbook** : journalise les événements (sans données sensibles)
+- **Détection d'anomalie** : HA redémarré la nuit, alarme non armée → alerte
+- **Notification actions** : capte `REVEIL_SNOOZE` / `REVEIL_STOP` / `REVEIL_ACCEPTER_HH:MM` depuis l'app mobile
+- **Retry** : musique (3 tentatives + fallback TTS), volets (2 tentatives + ouverture au lever du soleil)
+- **Apprentissage** : suit les habitudes (heure lever réelle, snooze moyen, régularité) + suggestions d'ajustement
+
+### Assist / commande vocale (LLM Tool Calling)
+- « Réveille-moi à 6h45 demain » → `smartwake_set_time`
+- « Active le réveil semaine » → `smartwake_activate`
+- « Pas de réveil demain » → `smartwake_skip`
+- « Quand sonne le prochain réveil ? » → `smartwake_status`
 
 ## Installation
 
@@ -83,26 +136,19 @@ Un réveil domotique complet qui ne se contente pas de sonner : il **prépare la
 3. **Redémarrez** Home Assistant
 4. *Paramètres → Appareils & Services → Ajouter une intégration* → cherchez **"SmartWAKE"**
 
-### Manuellement
+### Custom card (dashboard)
 
-1. Copiez le dossier `custom_components/smartwake/` dans votre dossier `/config/custom_components/`
-2. Redémarrez Home Assistant
-3. *Paramètres → Appareils & Services → Ajouter une intégration* → "SmartWAKE"
+Installez aussi la carte dédiée via HACS Frontend :
+- URL : `https://github.com/junkoku38/smartwake-card`
+- Category : **Dashboard (Lovelace)**
 
-## Configuration
-
-Le config flow se déroule en **6 étapes** :
-
-| Étape | Description |
-|-------|-------------|
-| **Base** | Nom, heure, jours actifs, ponctuel, skip, mode vacances |
-| **Lumière & aube** | Lumière progressive, luminosité max, durée, simulation d'aube |
-| **Musique** | Media player, playlist/radio, volume initial/final, durée de montée |
-| **Confort** | Pré-chauffage, radiateur, chauffe-eau, cafetière, volets |
-| **Intelligence** | Présence, workday, Withings, mouvement salle de bain, lever anticipé |
-| **Notification** | Notification mobile, TTS, snooze, escalade |
-
-Tous les paramètres sont éditables ensuite via *Configurer* sur l'intégration.
+```yaml
+type: custom:smartwake-card
+entity: switch.reveil_actif
+name: Mon réveil
+show_stats: true
+show_context: true
+```
 
 ## Entités créées (par réveil)
 
@@ -111,12 +157,16 @@ Tous les paramètres sont éditables ensuite via *Configurer* sur l'intégration
 | `switch.<nom>_actif` | switch | Activer / désactiver le réveil |
 | `time.<nom>_heure` | time | Heure du réveil (éditable) |
 | `select.<nom>_jours` | select | Jours actifs |
-| `sensor.<nom>_statut` | sensor | Statut (idle / prewake / ringing / snoozed / done) |
-| `sensor.<nom>_prochain_reveil` | sensor | Date/heure du prochain réveil |
-| `sensor.<nom>_snooze_count` | sensor | Nombre de snooze utilisés |
+| `sensor.<nom>_statut` | sensor | Statut (enum : idle/prewake/ringing/snoozed/done) |
+| `sensor.<nom>_prochain_reveil` | sensor | Date/heure du prochain réveil (timestamp) |
+| `sensor.<nom>_snooze_count` | sensor | Snoozes utilisés (cycle en cours) |
+| `sensor.<nom>_total_declenchements` | sensor | Déclenchements totaux (diagnostic) |
+| `sensor.<nom>_total_snoozes` | sensor | Snoozes totaux (diagnostic) |
+| `sensor.<nom>_total_stops` | sensor | Stops totaux (diagnostic) |
+| `sensor.<nom>_dernier_reveil` | sensor | Dernier réveil (diagnostic) |
 | `button.<nom>_stop` | button | Arrêter le réveil |
-| `button.<nom>_sauter_prochain` | button | Sauter le prochain réveil |
-| `button.<nom>_reset` | button | Reset de l'état |
+| `button.<nom>_sauter_prochain` | button | Sauter le prochain réveil (config) |
+| `button.<nom>_reset` | button | Reset de l'état (diagnostic) |
 | `button.<nom>_declencher` | button | Déclencher manuellement |
 | `number.<nom>_snooze_min` | number | Durée du snooze |
 | `number.<nom>_max_snooze` | number | Nombre max de snooze |
@@ -156,6 +206,7 @@ Tous les paramètres sont éditables ensuite via *Configurer* sur l'intégration
 | Capteur de sommeil | Withings, Sleep as Android (MQTT) |
 | Boutons physiques | Zigbee (IKEA/Aqara), tag NFC |
 | AI Task | Ollama (local), Anthropic, Google, OpenAI |
+| Carte dashboard | [smartwake-card](https://github.com/junkoku38/smartwake-card) |
 | Interface | Carte Mushroom, custom:alarm-clock-card |
 
 ## Sécurité
@@ -165,18 +216,29 @@ Le composant a été audité (revue de code défensive + SAST).
 ### Scanners
 - **Bandit** : 0 finding
 - **Semgrep** : 0 finding
-- **Secrets** : 0 finding (aucun token/credential dans le code)
+- **Secrets** : 0 finding
 
-### Mesures de sécurité implémentées
-- **Contrôle d'accès strict** : les services utilisent `entity_registry` (match par `config_entry_id`, pas par sous-chaîne)
-- **Validation des entrées** : nom du réveil validé par regex `^[A-Za-z0-9_-]{1,30}$`, heure validée par regex `^\d{1,2}:\d{2}$` + bornes
-- **Anti-injection de prompt IA** : séparation des instructions et des données contextuelles dans les prompts
-- **Principe de moindre privilège** : l'entité AI Task ne doit pas avoir accès aux services HA (documenté dans le config flow)
-- **Logbook sans fuite** : les événements journalisés ne contiennent pas de données sensibles (pas de détails de RDV, pas d'heures exactes)
-- **L'IA ne déclenche jamais la sonnerie** : la sonnerie reste un `time` trigger déterministe
+### Mesures de sécurité
+- **Contrôle d'accès strict** : `entity_registry` (match par `config_entry_id`)
+- **Validation des entrées** : slugify (accents), regex heure `^\d{1,2}:\d{2}$` + bornes
+- **Anti-injection de prompt IA** : séparation instructions / données contextuelles
+- **Principe de moindre privilège** : AI Task sans accès aux services HA
+- **Logbook sans fuite** : pas de détails sensibles (RDV, heures exactes)
+- **L'IA ne déclenche jamais la sonnerie** : `time` trigger déterministe
 
 ### Signaler une vulnérabilité
-Ouvrez une issue sur https://github.com/junkoku38/smartwake/issues ou contactez le codeowner.
+Ouvrez une issue sur https://github.com/junkoku38/smartwake/issues
+
+## Tests
+
+34 tests unitaires (pytest) couvrant :
+- `_jours_actifs` (tous, semaine, weekend, jour unique, personnalisé vide/plein)
+- `_parse_heure` (valide, minuit, invalide)
+- Coordinator (activation, désactivation, set_heure, set_jours, snooze max, skip, reset)
+- `_sonne_aujourd_hui` (semaine, weekend, mode vacances, skip)
+- Validation nom (slugify, accents)
+- Validation heure notification (valide, invalide, injection)
+- AI module (désactivé, fallback)
 
 ## Licence
 
