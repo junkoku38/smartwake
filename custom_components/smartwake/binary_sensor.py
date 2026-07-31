@@ -17,6 +17,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event, async_track_time_change
+from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_IGNORER_FERIES,
@@ -77,12 +78,36 @@ class _BaseBinary(BinarySensorEntity):
         self._attr_icon = description.icon
         self._attr_should_poll = False
         self._attr_device_info = make_device_info(entry)
-        self._unsub_trackers = []
 
     async def async_added_to_hass(self) -> None:
         self.async_on_remove(self.coordinator.async_add_listener(self._handle_update))
-        for unsub in self._unsub_trackers:
-            self.async_on_remove(unsub)
+        self._enregistrer_suivis()
+
+    def _enregistrer_suivis(self) -> None:
+        """Point d'extension pour les suivis propres à chaque sonde.
+
+        Les sous-classes empilaient auparavant leurs désabonnements dans une
+        liste *après* avoir appelé super(), qui l'avait déjà parcourue vide :
+        aucun suivi n'était donc libéré au retrait de l'entité. Après un
+        rechargement, les anciens callbacks écrivaient l'état d'entités
+        détruites et s'accumulaient.
+        """
+
+    def _suivre_minuit(self) -> None:
+        """Recalcule la sonde au changement de jour."""
+        self.async_on_remove(
+            async_track_time_change(
+                self.hass, self._handle_update, hour=0, minute=0, second=5
+            )
+        )
+
+    def _suivre_entite(self, entity_id: str | None) -> None:
+        if entity_id:
+            self.async_on_remove(
+                async_track_state_change_event(
+                    self.hass, [entity_id], self._handle_update
+                )
+            )
 
     def _handle_update(self, *args, **kwargs) -> None:
         self.async_write_ha_state()
@@ -95,13 +120,10 @@ class ReveilSonneAujourdhui(_BaseBinary):
     def is_on(self) -> bool:
         if not self.coordinator.actif:
             return False
-        return self.coordinator._sonne_aujourd_hui(datetime.now())
+        return self.coordinator._sonne_aujourd_hui(dt_util.now())
 
-    async def async_added_to_hass(self) -> None:
-        await super().async_added_to_hass()
-        # Recalculer à minuit (changement de jour)
-        unsub = async_track_time_change(self.hass, self._handle_update, hour=0, minute=0, second=5)
-        self._unsub_trackers.append(unsub)
+    def _enregistrer_suivis(self) -> None:
+        self._suivre_minuit()
 
 
 class ReveilEnCours(_BaseBinary):
@@ -131,19 +153,11 @@ class ReveilFerie(_BaseBinary):
         return state.state == "off"
 
     def _is_weekend(self) -> bool:
-        return datetime.now().weekday() in (5, 6)
+        return dt_util.now().weekday() in (5, 6)
 
-    async def async_added_to_hass(self) -> None:
-        await super().async_added_to_hass()
-        # Écouter les changements du workday sensor en temps réel
-        cfg = self.coordinator.config
-        sensor = cfg.get(CONF_WORKDAY_SENSOR)
-        if sensor:
-            unsub = async_track_state_change_event(self.hass, [sensor], self._handle_update)
-            self._unsub_trackers.append(unsub)
-        # Recalcul à minuit
-        unsub_midnight = async_track_time_change(self.hass, self._handle_update, hour=0, minute=0, second=5)
-        self._unsub_trackers.append(unsub_midnight)
+    def _enregistrer_suivis(self) -> None:
+        self._suivre_entite(self.coordinator.config.get(CONF_WORKDAY_SENSOR))
+        self._suivre_minuit()
 
 
 class ReveilWeekend(_BaseBinary):
@@ -151,13 +165,10 @@ class ReveilWeekend(_BaseBinary):
 
     @property
     def is_on(self) -> bool:
-        return datetime.now().weekday() in (5, 6)
+        return dt_util.now().weekday() in (5, 6)
 
-    async def async_added_to_hass(self) -> None:
-        await super().async_added_to_hass()
-        # Recalcul à minuit
-        unsub = async_track_time_change(self.hass, self._handle_update, hour=0, minute=0, second=5)
-        self._unsub_trackers.append(unsub)
+    def _enregistrer_suivis(self) -> None:
+        self._suivre_minuit()
 
 
 class ReveilVacancesSco(_BaseBinary):
@@ -174,14 +185,6 @@ class ReveilVacancesSco(_BaseBinary):
             return False
         return state.state == "on"
 
-    async def async_added_to_hass(self) -> None:
-        await super().async_added_to_hass()
-        # Écouter les changements du calendar en temps réel
-        cfg = self.coordinator.config
-        calendar = cfg.get(CONF_VACANCES_SCOLAIRES_CALENDAR)
-        if calendar:
-            unsub = async_track_state_change_event(self.hass, [calendar], self._handle_update)
-            self._unsub_trackers.append(unsub)
-        # Recalcul à minuit
-        unsub_midnight = async_track_time_change(self.hass, self._handle_update, hour=0, minute=0, second=5)
-        self._unsub_trackers.append(unsub_midnight)
+    def _enregistrer_suivis(self) -> None:
+        self._suivre_entite(self.coordinator.config.get(CONF_VACANCES_SCOLAIRES_CALENDAR))
+        self._suivre_minuit()

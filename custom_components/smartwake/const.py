@@ -2,6 +2,26 @@
 
 import unicodedata
 
+from functools import lru_cache
+from pathlib import Path
+
+
+@lru_cache(maxsize=1)
+def integration_version() -> str:
+    """Version déclarée dans manifest.json.
+
+    Elle était recopiée en dur à deux endroits, avec trois valeurs divergentes
+    (2.0.0 dans __init__.py, 2.4.0 dans entity.py, et celle du manifest).
+    """
+    import json
+
+    try:
+        manifest = Path(__file__).parent / "manifest.json"
+        return json.loads(manifest.read_text(encoding="utf-8"))["version"]
+    except Exception:  # noqa: BLE001 - ne doit jamais bloquer le setup
+        return "0.0.0"
+
+
 DOMAIN = "smartwake"
 
 
@@ -55,7 +75,6 @@ CONF_VOLETS_SOLEIL = "volets_soleil"
 CONF_VOLETS_POSITION = "volets_position"
 CONF_VOLETS_SOLEIL_LEVER = "volets_soleil_lever"
 CONF_LUMIERE_SCENE = "lumiere_scene"
-CONF_LUMIERE_TEMP_COULEUR = "lumiere_temp_couleur"
 CONF_LUMIERE_COURBE = "lumiere_courbe"
 CONF_NOTIFICATION_ACTIVEE = "notification_activee"
 CONF_NOTIFY_DEVICE = "notify_device"
@@ -105,7 +124,6 @@ CONF_CAPTEUR_CO2 = "capteur_co2"
 CONF_AI_BRIEFING = "ai_briefing"
 CONF_AI_TASK_ENTITY = "ai_task_entity"
 CONF_AI_MUSIQUE_ADAPT = "ai_musique_adapt"
-CONF_AI_SUGGESTION_HEURE = "ai_suggestion_heure"
 CONF_AI_SUGGESTION_HEURE = "ai_suggestion_heure"
 CONF_AI_BILAN_HEBDO = "ai_bilan_hebdo"
 CONF_AI_VERIF_LEVER = "ai_verif_lever"

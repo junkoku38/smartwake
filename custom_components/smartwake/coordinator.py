@@ -63,6 +63,7 @@ from .const import (
     CONF_LEVER_ANTICIPE,
     CONF_LUMIERE,
     CONF_LUMIERE_ACTIVEE,
+    CONF_LUMIERE_TEMP_COULEUR,
     CONF_MOUVEMENT_CUISINE,
     CONF_MOUVEMENT_SDB,
     CONF_MOUVEMENT_STOP,
@@ -171,6 +172,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
         self._cancel_escalade: asyncio.Task | None = None
         self._cancel_mouvement: Callable | None = None
         self._cancel_rampes: list[asyncio.Task] = []
+        self._cancel_snooze: asyncio.Task | None = None
         # Vrai si la rampe de lumière a déjà été jouée par le pré-réveil,
         # pour ne pas la relancer à l'heure du réveil
         self._aube_faite = False
@@ -300,27 +302,31 @@ class ReveilCoordinator(DataUpdateCoordinator):
     async def _alerter_anomalie(self, notify_device: str, anomalies: list[str]) -> None:
         """Envoie une alerte si une anomalie est détectée."""
         msg = "⚠️ Anomalie SmartWAKE: " + ", ".join(anomalies)
-        try:
-            await self.hass.services.async_call(
-                "notify", "send_message",
-                {"entity_id": notify_device, "title": "⚠️ SmartWAKE Anomalie", "message": msg},
-            )
-        except Exception as exc:
-            _LOGGER.error("Erreur alerte anomalie: %s", exc)
+        await self._notifier(notify_device, "⚠️ SmartWAKE Anomalie", msg)
 
     def _setup_notification_actions(self) -> None:
         """Écoute les actions REVEIL_SNOOZE / REVEIL_STOP depuis l'app mobile."""
         entry_id = self.entry.entry_id
+        # Les actions portent l'identifiant de l'entrée : sans lui, avec
+        # plusieurs réveils configurés, un appui sur Snooze agissait sur tous.
+        suffixe = f"_{entry_id}"
 
         @callback
         def _handle_notification_action(event):
             action = event.data.get("action")
-            if action == "REVEIL_SNOOZE":
+            if not action:
+                return
+
+            if action.startswith("REVEIL_SNOOZE"):
+                if action != "REVEIL_SNOOZE" and not action.endswith(suffixe):
+                    return  # destiné à un autre réveil
                 _LOGGER.info("Action Snooze reçue pour '%s'", self.entry.title)
                 self.hass.async_create_task(self.snooze())
-            elif action == "REVEIL_STOP":
+            elif action.startswith("REVEIL_STOP"):
+                if action != "REVEIL_STOP" and not action.endswith(suffixe):
+                    return
                 _LOGGER.info("Action Stop reçue pour '%s'", self.entry.title)
-                self.hass.async_create_task(self.stop())
+                self.hass.async_create_task(self.stop(raison="notification"))
             elif action and action.startswith("REVEIL_ACCEPTER_"):
                 # Suggestion IA acceptée — valider et appliquer l'heure
                 heure = action.replace("REVEIL_ACCEPTER_", "")
@@ -344,12 +350,14 @@ class ReveilCoordinator(DataUpdateCoordinator):
             )
         )
 
-        # Planifier la suggestion IA du soir (21:30) si activée
-        if self.entry.data.get(CONF_AI_SUGGESTION_HEURE):
+        # Créneau du soir : suggestion d'heure et tâches IA « on_evening »
+        cfg = self.entry.data
+        if cfg.get(CONF_AI_SUGGESTION_HEURE) or cfg.get(CONF_AI_CUSTOM_TASKS) \
+                or cfg.get(CONF_AI_CUSTOM_ENABLED):
             self._setup_ai_suggestion()
 
     def _setup_ai_suggestion(self) -> None:
-        """Planifie une suggestion d'heure IA chaque soir à 21:30."""
+        """Planifie le traitement IA du soir, chaque jour à 21:30."""
         unsub = async_track_time_change(
             self.hass,
             self._ai_suggestion_callback,
@@ -359,10 +367,16 @@ class ReveilCoordinator(DataUpdateCoordinator):
 
     @callback
     def _ai_suggestion_callback(self, now: datetime) -> None:
-        """Callback du soir — génère une suggestion d'heure IA."""
+        """Callback du soir — suggestion d'heure et tâches IA « on_evening »."""
         if not self._actif:
             return
-        self.hass.async_create_task(self._run_ai_suggestion())
+        cfg = self.entry.data
+        if cfg.get(CONF_AI_SUGGESTION_HEURE):
+            self.hass.async_create_task(self._run_ai_suggestion())
+        # Le déclencheur « on_evening » était proposé dans l'interface mais
+        # jamais émis : une tâche IA configurée « Le soir » ne s'exécutait pas.
+        if cfg.get(CONF_AI_CUSTOM_ENABLED) or cfg.get(CONF_AI_CUSTOM_TASKS):
+            self.hass.async_create_task(self._run_custom_ai("on_evening"))
 
     async def _run_ai_suggestion(self) -> None:
         """Génère et envoie une suggestion d'heure via IA + notification actionnable."""
@@ -379,22 +393,16 @@ class ReveilCoordinator(DataUpdateCoordinator):
         if not notify_device:
             return
 
-        try:
-            await self.hass.services.async_call(
-                "notify", "send_message",
-                {
-                    "entity_id": notify_device,
-                    "title": "⏰ Suggestion réveil",
-                    "message": f"Demain : {heure_proposee} ? {raison}",
-                    "data": {"actions": [
-                        {"action": f"REVEIL_ACCEPTER_{heure_proposee}", "title": "Accepter"},
-                        {"action": "REVEIL_REFUSER", "title": f"Garder {current_time}"},
-                    ]},
-                },
-            )
+        if await self._notifier(
+            notify_device,
+            "⏰ Suggestion réveil",
+            f"Demain : {heure_proposee} ? {raison}",
+            actions=[
+                {"action": f"REVEIL_ACCEPTER_{heure_proposee}", "title": "Accepter"},
+                {"action": "REVEIL_REFUSER", "title": f"Garder {current_time}"},
+            ],
+        ):
             self._log_event("Suggestion IA envoyée")
-        except Exception as exc:
-            _LOGGER.error("Erreur envoi suggestion IA: %s", exc)
 
     async def async_shutdown(self) -> None:
         if self._cancel_trigger:
@@ -414,7 +422,8 @@ class ReveilCoordinator(DataUpdateCoordinator):
             except Exception as exc:  # noqa: BLE001 - nettoyage best effort
                 _LOGGER.debug("Désabonnement impossible: %s", exc)
         self._unsub_listeners.clear()
-        for task in (self._cancel_cycle, self._cancel_escalade):
+        for task in (self._cancel_cycle, self._cancel_escalade,
+                     self._cancel_snooze, *self._cancel_rampes):
             if task and not task.done():
                 task.cancel()
         _LOGGER.info("Réveil '%s' arrêté", self.entry.title)
@@ -438,7 +447,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
                     "name": self.entry.title,
                     "message": message,
                     "domain": domain,
-                    "entity_id": f"sensor.{self.entry.entry_id}_sensor_statut",
+                    "entity_id": f"sensor.{slugify(self.entry.title)}_statut",
                 },
             )
         except Exception as exc:
@@ -492,13 +501,53 @@ class ReveilCoordinator(DataUpdateCoordinator):
             self._log_event("Réveil activé")
             self._fire_event("smartwake_activated", heure=self.config.get(CONF_HEURE, "07:00"), prochain=self._prochain.isoformat() if self._prochain else None)
         else:
+            # Un cycle peut être en cours : il faut l'interrompre réellement.
+            # Seuls les déclencheurs horaires étaient nettoyés, si bien que
+            # couper l'interrupteur pendant la sonnerie laissait la musique
+            # jouer et la rampe de volume continuer de monter.
+            if self._reveil_en_cours or self._statut == STATUT_PREWAKE:
+                await self._interrompre_cycle()
             self._statut = STATUT_INACTIF
             self._prochain = None
             self._nettoyer_triggers()
             self._reveil_en_cours = False
+            self._aube_faite = False
             self._log_event("Réveil désactivé")
             self._fire_event("smartwake_deactivated")
         self._notify()
+
+    async def _interrompre_cycle(self) -> None:
+        """Annule les tâches du cycle et éteint ce qui a été allumé."""
+        for task in (self._cancel_cycle, self._cancel_escalade,
+                     self._cancel_snooze, *self._cancel_rampes):
+            if task and not task.done():
+                task.cancel()
+        self._cancel_cycle = None
+        self._cancel_escalade = None
+        self._cancel_snooze = None
+        self._cancel_rampes = []
+        if self._cancel_mouvement is not None:
+            self._cancel_mouvement()
+            self._cancel_mouvement = None
+
+        cfg = self.entry.data
+        if cfg.get(CONF_MUSIQUE_ACTIVEE) and cfg.get(CONF_MEDIA_PLAYER):
+            try:
+                await self.hass.services.async_call(
+                    "media_player", "media_stop",
+                    {"entity_id": cfg[CONF_MEDIA_PLAYER]},
+                    blocking=True,
+                )
+            except Exception as exc:
+                _LOGGER.error("Erreur arrêt musique: %s", exc)
+        if cfg.get(CONF_LUMIERE_ACTIVEE) and cfg.get(CONF_LUMIERE):
+            try:
+                await self.hass.services.async_call(
+                    "light", "turn_off", {"entity_id": cfg[CONF_LUMIERE]},
+                    blocking=True,
+                )
+            except Exception as exc:
+                _LOGGER.error("Erreur extinction: %s", exc)
 
     def _nettoyer_triggers(self) -> None:
         if self._cancel_trigger:
@@ -564,11 +613,8 @@ class ReveilCoordinator(DataUpdateCoordinator):
         # Mode vacances : booléen OU entité (calendar/input_boolean/binary_sensor/person)
         if cfg.get(CONF_MODE_VACANCES, False):
             return False
-        vac_entity = cfg.get(CONF_MODE_VACANCES_ENTITY)
-        if vac_entity:
-            state = self.hass.states.get(vac_entity)
-            if state and state.state == "on":
-                return False
+        if self._mode_vacances_entite():
+            return False
         # Le saut ne s'applique qu'à l'occurrence visée. Sans cette borne, un
         # appui sur « Sauter prochain » désactivait le réveil définitivement,
         # car stop() — seul à remettre le drapeau à zéro — n'était plus atteint.
@@ -638,6 +684,15 @@ class ReveilCoordinator(DataUpdateCoordinator):
 
         heure_defaut = _parse_heure(cfg.get(CONF_HEURE, "07:00"))
 
+        # Mode vacances : aucun réveil planifié, ni par booléen ni par entité.
+        # Le capteur « Prochain réveil » annonçait sinon une date à laquelle
+        # rien ne se déclenchait.
+        if cfg.get(CONF_MODE_VACANCES, False) or self._mode_vacances_entite():
+            self._prochain = None
+            if self._statut not in (STATUT_RINGING, STATUT_SNOOZED, STATUT_PREWAKE):
+                self._statut = STATUT_IDLE if self._actif else STATUT_INACTIF
+            return
+
         for i in range(8):
             candidate_date = now + timedelta(days=i)
             jour_semaine = candidate_date.weekday()
@@ -651,95 +706,117 @@ class ReveilCoordinator(DataUpdateCoordinator):
             else:
                 heure = heure_defaut
 
-            # Heure adaptative via agenda ?
-            heure_adapt = heure
+            candidate = self._instant_local(candidate_date.date(), heure)
+
+            # Les ajustements s'appliquent sur le datetime, pas sur l'heure
+            # seule : un décalage franchissant minuit produisait sinon une
+            # heure reportée de près de 24 h sur le même jour.
             if cfg.get(CONF_ADAPTATIF_AGENDA, False) and cfg.get(CONF_AGENDA_ENTITY):
-                heure_adapt = self._heure_adaptative_agenda(heure, now, jours) or heure
+                ajuste = self._instant_adaptatif_agenda(candidate)
+                if ajuste is not None:
+                    candidate = ajuste
 
-            # Phase de sommeil : fenêtre ±N min autour de l'heure
             if cfg.get(CONF_SOMMEIL_PHASE, False) and cfg.get(CONF_WITHINGS_BED_1):
-                heure_adapt = self._heure_phase_sommeil(heure_adapt, cfg)
+                candidate -= timedelta(minutes=self._avance_phase_sommeil(cfg))
+            if candidate <= now:
+                continue
 
-            candidate = candidate_date.replace(
-                hour=heure_adapt.hour, minute=heure_adapt.minute, second=0, microsecond=0
-            )
-            if candidate > now:
-                # Vérifier férié si applicable
-                if cfg.get(CONF_IGNORER_FERIES, True) and cfg.get(CONF_WORKDAY_SENSOR):
-                    self._prochain = candidate
-                    if self._statut not in (STATUT_RINGING, STATUT_SNOOZED, STATUT_PREWAKE):
-                        self._statut = STATUT_IDLE if self._actif else STATUT_INACTIF
-                    return
-                self._prochain = candidate
-                if self._statut not in (STATUT_RINGING, STATUT_SNOOZED, STATUT_PREWAKE):
-                    self._statut = STATUT_IDLE if self._actif else STATUT_INACTIF
-                return
+            # Occurrence explicitement sautée : on cherche la suivante
+            if self._skip_prochain and self._skip_date == candidate.date():
+                continue
+
+            self._prochain = candidate
+            if self._statut not in (STATUT_RINGING, STATUT_SNOOZED, STATUT_PREWAKE):
+                self._statut = STATUT_IDLE if self._actif else STATUT_INACTIF
+            return
 
         self._prochain = None
         if self._statut not in (STATUT_RINGING, STATUT_SNOOZED, STATUT_PREWAKE):
             self._statut = STATUT_INACTIF
 
-    def _heure_adaptative_agenda(self, heure_defaut: time, now: datetime, jours: set[int]) -> time | None:
-        """Calcule l'heure de réveil basée sur le 1er RDV de l'agenda du prochain jour actif."""
+    def _instant_local(self, jour: date, heure: time) -> datetime:
+        """Combine une date et une heure dans le fuseau de Home Assistant.
+
+        On ne peut pas partir de `now().replace(hour=...)` : sur un datetime
+        tz-aware, l'offset UTC de « maintenant » est conservé, ce qui décale
+        l'instant d'une heure le jour du changement d'heure.
+        """
+        naif = datetime.combine(jour, heure)
+        tz = getattr(dt_util, "DEFAULT_TIME_ZONE", None)
+        return naif.replace(tzinfo=tz) if tz is not None else naif
+
+    def _mode_vacances_entite(self) -> bool:
+        """Vrai si l'entité de mode vacances configurée est active."""
+        entite = self.entry.data.get(CONF_MODE_VACANCES_ENTITY)
+        if not entite:
+            return False
+        state = self.hass.states.get(entite)
+        return state is not None and state.state == "on"
+
+    def _instant_adaptatif_agenda(self, candidate: datetime) -> datetime | None:
+        """Avance le réveil selon le premier rendez-vous du jour visé.
+
+        L'ancienne version parcourait les jours suivants mais sortait de la
+        boucle dès la première itération, calculait deux bornes de journée
+        qu'elle n'utilisait pas, et appliquait le décalage sans vérifier que le
+        rendez-vous concernait bien le jour planifié.
+        """
         cfg = self.entry.data
         calendar = cfg.get(CONF_AGENDA_ENTITY)
         marge = cfg.get(CONF_AGENDA_MARGE_MIN, DEFAULT_AGENDA_MARGE_MIN)
 
         try:
-            # Récupérer les événements du jour suivant actif
-            for i in range(1, 8):
-                demain = now + timedelta(days=i)
-                if demain.weekday() not in jours:
-                    continue
-                debut_jour = demain.replace(hour=0, minute=0, second=0, microsecond=0)
-                fin_jour = debut_jour + timedelta(days=1)
-                events = self.hass.states.get(calendar)
-                if events is None:
-                    return None
-                # Les calendar entities exposent les attributs start_time / end_time
-                # du prochain événement
-                start = events.attributes.get("start_time")
-                if start:
-                    from datetime import datetime as dt
-                    debut_rdv = dt.fromisoformat(start)
-                    reveil = debut_rdv - timedelta(minutes=marge)
-                    if reveil.time() != heure_defaut:
-                        _LOGGER.info(
-                            "Réveil adaptatif: %s (RDV %s − %dmin)",
-                            reveil.strftime("%H:%M"), start, marge,
-                        )
-                        self._log_event("Réveil adaptatif déclenché")
-                    return reveil.time()
-                break
+            state = self.hass.states.get(calendar)
+            if state is None:
+                return None
+            start = state.attributes.get("start_time")
+            if not start:
+                return None
+
+            debut_rdv = datetime.fromisoformat(start)
+            if debut_rdv.tzinfo is None:
+                tz = getattr(dt_util, "DEFAULT_TIME_ZONE", None)
+                if tz is not None:
+                    debut_rdv = debut_rdv.replace(tzinfo=tz)
+
+            # Le rendez-vous doit tomber le jour du réveil planifié
+            if debut_rdv.date() != candidate.date():
+                return None
+
+            reveil = debut_rdv - timedelta(minutes=marge)
+            if reveil >= candidate:
+                return None  # le RDV est tardif, l'heure normale suffit
+
+            _LOGGER.info(
+                "Réveil adaptatif: %s (RDV %s − %d min)",
+                reveil.strftime("%H:%M"), start, marge,
+            )
+            self._log_event("Réveil adaptatif déclenché")
+            return reveil
         except Exception as exc:
             _LOGGER.error("Erreur agenda adaptatif: %s", exc)
         return None
 
-    def _heure_phase_sommeil(self, heure_defaut: time, cfg: dict) -> time:
-        """Ajuste l'heure dans une fenêtre ±N min selon la phase de sommeil Withings.
+    def _avance_phase_sommeil(self, cfg: dict) -> int:
+        """Minutes d'avance à appliquer selon la phase de sommeil Withings.
 
-        Si le capteur Withings indique une phase de sommeil léger dans la fenêtre,
-        on réveille à ce moment-là. Sinon, on garde l'heure par défaut.
+        Renvoyait auparavant une heure recalculée sur la date du jour, ce qui
+        reportait le réveil de près de 24 h lorsque l'avance franchissait
+        minuit (00:10 avancé de 20 min donnait 23:50 le même jour).
         """
-        fenetre = cfg.get(CONF_SOMMEIL_FENETRE_MIN, DEFAULT_SOMMEIL_FENETRE_MIN)
-        # Withings expose parfois un attribut "sleep_state" ou similaire
-        # Ici on vérifie juste l'état du capteur : si "on" = au lit, on garde l'heure
-        # Une implémentation complète nécessiterait l'API Withings détaillée
         bed_1 = cfg.get(CONF_WITHINGS_BED_1)
         if not bed_1:
-            return heure_defaut
+            return 0
         state = self.hass.states.get(bed_1)
         if state is None:
-            return heure_defaut
-        # Logique simplifiée : si le capteur indique "light" (sommeil léger) dans la fenêtre
-        # on avance le réveil. Sinon heure par défaut.
+            return 0
         sleep_state = state.attributes.get("sleep_state", state.state)
-        if sleep_state in ("light", "awake"):
-            heure_avancee = (datetime.combine(datetime.today(), heure_defaut) - timedelta(minutes=fenetre)).time()
-            _LOGGER.info("Phase sommeil léger détectée — réveil avancé à %s", heure_avancee)
-            self._log_event("Phase sommeil léger — réveil avancé")
-            return heure_avancee
-        return heure_defaut
+        if sleep_state not in ("light", "awake"):
+            return 0
+        fenetre = cfg.get(CONF_SOMMEIL_FENETRE_MIN, DEFAULT_SOMMEIL_FENETRE_MIN)
+        _LOGGER.info("Phase sommeil léger détectée — réveil avancé de %d min", fenetre)
+        self._log_event("Phase sommeil léger — réveil avancé")
+        return int(fenetre)
 
     def _planifier_trigger(self) -> None:
         """Programme les déclencheurs pour le pré-réveil et le réveil.
@@ -791,7 +868,23 @@ class ReveilCoordinator(DataUpdateCoordinator):
         self._statut = STATUT_PREWAKE
         self._fire_event("smartwake_prewake", phase="demarrage")
         self._notify()
-        self.hass.async_create_task(self._executer_prewake())
+        # La tâche était créée sans référence : ni stop() ni async_shutdown()
+        # ne pouvaient l'annuler, et elle survivait au déchargement.
+        self._cancel_cycle = self.hass.async_create_task(self._executer_prewake())
+
+    @callback
+    def _abandonner_reveil(self, motif: str) -> None:
+        """Sort proprement d'un réveil annulé avant la sonnerie.
+
+        Sans cette remise à zéro, le statut restait bloqué sur « prewake »
+        indéfiniment — _calculer_prochain excluant cet état de la
+        réinitialisation — et binary_sensor.reveil_en_cours restait « on ».
+        """
+        _LOGGER.info("Réveil '%s' annulé — %s", self.entry.title, motif)
+        self._aube_faite = False
+        self._reveil_en_cours = False
+        self._statut = STATUT_IDLE if self._actif else STATUT_INACTIF
+        self._notify()
 
     @callback
     def _trigger_callback(self, now: datetime) -> None:
@@ -801,6 +894,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
         if self._reveil_en_cours:
             return
         if not self._sonne_aujourd_hui(now):
+            self._abandonner_reveil("conditions du jour non remplies")
             return
 
         # Lever anticipé : si mouvement cuisine détecté récemment
@@ -809,17 +903,16 @@ class ReveilCoordinator(DataUpdateCoordinator):
             if cuisine:
                 state = self.hass.states.get(cuisine)
                 if state and state.state == "on":
-                    _LOGGER.info("Réveil '%s' annulé — lever anticipé détecté", self.entry.title)
                     # Borné au jour courant, sinon le réveil serait désactivé
                     # définitivement après un simple passage en cuisine.
                     self._skip_prochain = True
                     self._skip_date = now.date()
-                    self._notify()
+                    self._abandonner_reveil("lever anticipé détecté")
                     return
 
         # Withings : si personne au lit
         if self.entry.data.get(CONF_WITHINGS_BED_1) and not self._personne_au_lit():
-            _LOGGER.info("Réveil '%s' annulé — personne n'est au lit", self.entry.title)
+            self._abandonner_reveil("personne n'est au lit")
             return
 
         self._cancel_cycle = self.hass.async_create_task(self._executer_cycle())
@@ -838,6 +931,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
                 await self.hass.services.async_call(
                     "climate", "set_preset_mode",
                     {"entity_id": radiateur, "preset_mode": "comfort"},
+                    blocking=True,
                 )
                 _LOGGER.info("Radiateur confort: %s", radiateur)
             except Exception as exc:
@@ -847,25 +941,42 @@ class ReveilCoordinator(DataUpdateCoordinator):
         chauffe_eau = cfg.get(CONF_CHAUFFE_EAU)
         if chauffe_eau:
             try:
-                await self.hass.services.async_call("switch", "turn_on", {"entity_id": chauffe_eau})
+                await self.hass.services.async_call("switch", "turn_on", {"entity_id": chauffe_eau}, blocking=True)
             except Exception as exc:
                 _LOGGER.error("Erreur chauffe-eau: %s", exc)
+
+        # Café / bouilloire : programmé en parallèle pour tomber réellement
+        # à H - cafetiere_min. Le délai était calculé avec DEFAULT_AUBE_MIN au
+        # lieu du délai de pré-réveil effectif (10 - 20 -> négatif, donc 0), et
+        # le sleep se trouvait après la rampe de lumière qui bloque ~20 min :
+        # le café partait à H-26 au lieu de H-10.
+        cafetiere = cfg.get(CONF_CAFETIERE)
+        cafetiere_min = cfg.get(CONF_CAFETIERE_MIN, DEFAULT_CAFETIERE_MIN)
+        if cafetiere and cafetiere_min > 0:
+            prechauffe = cfg.get(CONF_PRECHAUFFE_MIN, DEFAULT_PRECHAUFFE_MIN)
+            aube = cfg.get(CONF_AUBE_MIN, DEFAULT_AUBE_MIN)
+            attente = max(0, (max(prechauffe, aube) - cafetiere_min) * 60)
+            self._cancel_rampes.append(
+                self.hass.async_create_task(self._lancer_cafetiere(cafetiere, attente))
+            )
 
         # Simulation d'aube (lumière progressive)
         if cfg.get(CONF_LUMIERE_ACTIVEE) and cfg.get(CONF_LUMIERE):
             self._aube_faite = True
             await self._cycle_lumiere_progressive()
 
-        # Café / bouilloire
-        cafetiere = cfg.get(CONF_CAFETIERE)
-        cafetiere_min = cfg.get(CONF_CAFETIERE_MIN, DEFAULT_CAFETIERE_MIN)
-        if cafetiere and cafetiere_min > 0:
-            await asyncio.sleep(max(0, cafetiere_min * 60 - DEFAULT_AUBE_MIN * 60))
-            try:
-                await self.hass.services.async_call("switch", "turn_on", {"entity_id": cafetiere})
-                _LOGGER.info("Cafetière allumée: %s", cafetiere)
-            except Exception as exc:
-                _LOGGER.error("Erreur cafetière: %s", exc)
+    async def _lancer_cafetiere(self, cafetiere: str, attente: float) -> None:
+        """Allume la cafetière après le délai voulu."""
+        await asyncio.sleep(attente)
+        try:
+            await self.hass.services.async_call(
+                "switch", "turn_on", {"entity_id": cafetiere}, blocking=True
+            )
+            _LOGGER.info("Cafetière allumée: %s", cafetiere)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            _LOGGER.error("Erreur cafetière: %s", exc)
 
     # ── Phase réveil ────────────────────────────────────────────
 
@@ -959,20 +1070,11 @@ class ReveilCoordinator(DataUpdateCoordinator):
         si la musique est activée.
         """
         self._log_event(f"Sonnerie échouée: {quoi}")
-        notify = self.entry.data.get(CONF_NOTIFY_DEVICE)
-        if not notify:
-            return
-        try:
-            await self.hass.services.async_call(
-                "notify", "send_message",
-                {
-                    "entity_id": notify,
-                    "title": "⚠️ SmartWAKE",
-                    "message": f"Le réveil sonore a échoué ({quoi}) — vérifiez la configuration",
-                },
-            )
-        except Exception as exc:
-            _LOGGER.error("Erreur notification d'échec: %s", exc)
+        await self._notifier(
+            self.entry.data.get(CONF_NOTIFY_DEVICE),
+            "⚠️ SmartWAKE",
+            f"Le réveil sonore a échoué ({quoi}) — vérifiez la configuration",
+        )
 
     async def _demarrer_musique(self) -> None:
         """Démarre la musique avec volume progressif. Retry + fallback TTS si échec."""
@@ -1011,10 +1113,12 @@ class ReveilCoordinator(DataUpdateCoordinator):
                 await self.hass.services.async_call(
                     "media_player", "volume_set",
                     {"entity_id": media, "volume_level": vol_initial},
+                    blocking=True,
                 )
                 await self.hass.services.async_call(
                     "media_player", "play_media",
                     {"entity_id": media, "media_content_id": content_id, "media_content_type": content_type},
+                    blocking=True,
                 )
                 musique_ok = True
                 _LOGGER.info("Musique lancée sur %s (tentative %d)", media, attempt + 1)
@@ -1042,6 +1146,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
                 await self.hass.services.async_call(
                     "media_player", "volume_set",
                     {"entity_id": media, "volume_level": vol},
+                    blocking=True,
                 )
             except Exception as exc:
                 _LOGGER.error("Erreur volume musique: %s", exc)
@@ -1064,9 +1169,9 @@ class ReveilCoordinator(DataUpdateCoordinator):
             try:
                 position = cfg.get(CONF_VOLETS_POSITION, 100)
                 if position >= 100:
-                    await self.hass.services.async_call("cover", "open_cover", {"entity_id": volets})
+                    await self.hass.services.async_call("cover", "open_cover", {"entity_id": volets}, blocking=True)
                 else:
-                    await self.hass.services.async_call("cover", "set_cover_position", {"entity_id": volets, "position": position})
+                    await self.hass.services.async_call("cover", "set_cover_position", {"entity_id": volets, "position": position}, blocking=True)
                 _LOGGER.info("Volets ouverts (%d%%): %s", position, volets)
                 return
             except Exception as exc:
@@ -1107,7 +1212,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
 
     async def _open_volets_now(self, volets: str) -> None:
         try:
-            await self.hass.services.async_call("cover", "open_cover", {"entity_id": volets})
+            await self.hass.services.async_call("cover", "open_cover", {"entity_id": volets}, blocking=True)
             _LOGGER.info("Volets ouverts au lever du soleil: %s", volets)
         except Exception as exc:
             _LOGGER.error("Erreur ouverture volets au lever: %s", exc)
@@ -1125,31 +1230,31 @@ class ReveilCoordinator(DataUpdateCoordinator):
                     await self.hass.services.async_call(
                         "light", "turn_on",
                         {"entity_id": entity, "brightness_pct": 80, "transition": 30},
+                        blocking=True,
                     )
                 elif domain == "switch":
-                    await self.hass.services.async_call("switch", "turn_on", {"entity_id": entity})
+                    await self.hass.services.async_call("switch", "turn_on", {"entity_id": entity}, blocking=True)
                 elif domain == "scene":
-                    await self.hass.services.async_call("scene", "turn_on", {"entity_id": entity})
+                    await self.hass.services.async_call("scene", "turn_on", {"entity_id": entity}, blocking=True)
                 _LOGGER.info("Scène matin: %s activé", entity)
             except Exception as exc:
                 _LOGGER.error("Erreur scène matin %s: %s", entity, exc)
 
     async def _escalade_intelligente(self) -> None:
         """Escalade progressive : 3 niveaux (doux → moyen → max)."""
-        cfg = self.entry.data
         # Niveau 1 (5 min) : volume 60%
         await asyncio.sleep(5 * 60)
-        if not self._reveil_en_cours:
+        if not self._escalade_pertinente():
             return
         await self._escalade_niveau(0.6, 60, "doux")
         # Niveau 2 (10 min) : volume 80%
         await asyncio.sleep(5 * 60)
-        if not self._reveil_en_cours:
+        if not self._escalade_pertinente():
             return
         await self._escalade_niveau(0.8, 80, "moyen")
         # Niveau 3 (15 min) : volume 100% + toutes lumières
         await asyncio.sleep(5 * 60)
-        if not self._reveil_en_cours:
+        if not self._escalade_pertinente():
             return
         await self._escalade_niveau(1.0, 100, "max")
         self._log_event("Escalade intelligente : niveau max")
@@ -1165,6 +1270,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
                 await self.hass.services.async_call(
                     "media_player", "volume_set",
                     {"entity_id": cfg[CONF_MEDIA_PLAYER], "volume_level": volume},
+                    blocking=True,
                 )
             except Exception as exc:
                 _LOGGER.error("Erreur escalade volume: %s", exc)
@@ -1173,62 +1279,130 @@ class ReveilCoordinator(DataUpdateCoordinator):
                 await self.hass.services.async_call(
                     "light", "turn_on",
                     {"entity_id": cfg[CONF_LUMIERE], "brightness_pct": brightness_pct},
+                    blocking=True,
                 )
             except Exception as exc:
                 _LOGGER.error("Erreur escalade lumière: %s", exc)
 
     async def _cycle_lumiere_progressive(self) -> None:
-        """Augmentation progressive de la luminosité."""
+        """Augmentation progressive de la luminosité jusqu'à la valeur réglée.
+
+        La rampe envoyait auparavant 20 fois `brightness_step_pct: 1`, soit 20 %
+        au total quel que soit le réglage, et comparait la luminosité lue
+        (échelle 0-255) à `brightness_max` (même échelle) alors que les
+        incréments étaient en pourcentage. Le réglage « Luminosité max » n'avait
+        donc quasiment aucun effet. On vise désormais des valeurs absolues.
+        """
         cfg = self.entry.data
         lumiere = cfg[CONF_LUMIERE]
-        brightness_max = cfg.get(CONF_BRIGHTNESS_MAX, DEFAULT_BRIGHTNESS_MAX)
-        duree = cfg.get(CONF_DUREE_PROGRESSIVE, DEFAULT_DUREE_PROGRESSIVE)
-        steps = min(20, brightness_max)
+        brightness_max = max(1, min(255, int(cfg.get(CONF_BRIGHTNESS_MAX, DEFAULT_BRIGHTNESS_MAX))))
+        duree = max(1, int(cfg.get(CONF_DUREE_PROGRESSIVE, DEFAULT_DUREE_PROGRESSIVE)))
+        temp_kelvin = cfg.get(CONF_LUMIERE_TEMP_COULEUR)
+
+        # Un pas toutes les 30 s environ, borné pour rester raisonnable
+        steps = max(1, min(brightness_max, duree * 2))
         intervalle = (duree * 60) / steps
 
         try:
-            await self.hass.services.async_call(
-                "light", "turn_on",
-                {"entity_id": lumiere, "brightness_step_pct": 1},
-            )
-            for _ in range(steps - 1):
-                await asyncio.sleep(intervalle)
-                etat = self.hass.states.get(lumiere)
-                if etat is None or etat.state != "on":
-                    break
-                brightness = etat.attributes.get("brightness", 0)
-                if brightness >= brightness_max:
-                    break
+            for i in range(1, steps + 1):
+                cible = max(1, round(brightness_max * i / steps))
+                charge: dict[str, Any] = {"entity_id": lumiere, "brightness": cible}
+                if temp_kelvin:
+                    charge["color_temp_kelvin"] = int(temp_kelvin)
                 await self.hass.services.async_call(
-                    "light", "turn_on",
-                    {"entity_id": lumiere, "brightness_step_pct": 1},
+                    "light", "turn_on", charge, blocking=True
                 )
-            _LOGGER.info("Lumière progressive terminée pour '%s'", self.entry.title)
+                if i < steps:
+                    await asyncio.sleep(intervalle)
+            _LOGGER.info(
+                "Lumière progressive terminée pour '%s' (%d/255 en %d min)",
+                self.entry.title, brightness_max, duree,
+            )
+        except asyncio.CancelledError:
+            raise
         except Exception as exc:
             _LOGGER.error("Erreur lumière: %s", exc)
+
+    async def _notifier(
+        self,
+        cible: str | None,
+        titre: str,
+        message: str,
+        actions: list[dict[str, str]] | None = None,
+    ) -> bool:
+        """Envoie une notification, avec boutons d'action si demandé.
+
+        L'entity service `notify.send_message` n'accepte que `message` et
+        `title` : passer une clé `data` — donc des boutons d'action — fait
+        échouer la validation. Seul le service historique
+        `notify.<nom_du_service>` accepte `data`. On l'utilise donc dès que des
+        actions sont nécessaires, avec repli sur l'entity service sinon.
+        """
+        if not cible:
+            return False
+
+        service = cible.split(".", 1)[1] if cible.startswith("notify.") else cible
+        charge: dict[str, Any] = {"title": titre, "message": message}
+        if actions:
+            charge["data"] = {"actions": actions}
+
+        # Service historique : seul chemin qui accepte les actions
+        if self.hass.services.has_service("notify", service):
+            try:
+                await self.hass.services.async_call(
+                    "notify", service, charge, blocking=True
+                )
+                return True
+            except Exception as exc:
+                _LOGGER.error("Erreur notification (%s): %s", service, exc)
+                return False
+
+        # Repli : entity service, sans les boutons d'action
+        if actions:
+            _LOGGER.warning(
+                "Service notify.%s introuvable — notification envoyée sans "
+                "boutons d'action", service,
+            )
+        entite = cible if cible.startswith("notify.") else f"notify.{service}"
+        try:
+            await self.hass.services.async_call(
+                "notify", "send_message",
+                {"entity_id": entite, "title": titre, "message": message},
+                blocking=True,
+            )
+            return True
+        except Exception as exc:
+            _LOGGER.error("Erreur notification (%s): %s", entite, exc)
+            return False
 
     async def _envoyer_notification(self) -> None:
         """Notification actionnable avec boutons Snooze / Stop."""
         cfg = self.entry.data
-        device = cfg.get(CONF_NOTIFY_DEVICE)
-        if not device:
-            return
-        titre = cfg.get(CONF_NOTIF_TITRE, DEFAULT_NOTIF_TITRE)
-        message = cfg.get(CONF_NOTIF_MESSAGE, DEFAULT_NOTIF_MESSAGE)
-        try:
-            data = {"title": titre, "message": message, "data": {"actions": [
-                {"action": "REVEIL_SNOOZE", "title": "Snooze"},
-                {"action": "REVEIL_STOP", "title": "Stop"},
-            ]}}
-            await self.hass.services.async_call("notify", "send_message", {"entity_id": device, **data})
+        envoye = await self._notifier(
+            cfg.get(CONF_NOTIFY_DEVICE),
+            cfg.get(CONF_NOTIF_TITRE, DEFAULT_NOTIF_TITRE),
+            cfg.get(CONF_NOTIF_MESSAGE, DEFAULT_NOTIF_MESSAGE),
+            actions=[
+                {"action": f"REVEIL_SNOOZE_{self.entry.entry_id}", "title": "Snooze"},
+                {"action": f"REVEIL_STOP_{self.entry.entry_id}", "title": "Stop"},
+            ],
+        )
+        if envoye:
             _LOGGER.info("Notification envoyée pour '%s'", self.entry.title)
-        except Exception as exc:
-            _LOGGER.error("Erreur notification: %s", exc)
+
+    def _escalade_pertinente(self) -> bool:
+        """L'escalade ne doit s'appliquer que pendant une sonnerie effective.
+
+        Elle ne testait que _reveil_en_cours, vrai aussi pendant un snooze :
+        avec les valeurs par défaut (snooze 5 min, escalade 5 min), les lumières
+        passaient à 100 % et le volume au maximum en pleine période de snooze.
+        """
+        return self._reveil_en_cours and self._statut == STATUT_RINGING
 
     async def _escalade(self, delai_min: int) -> None:
         """Escalade : volume max + toutes lumières si pas de stop."""
         await asyncio.sleep(delai_min * 60)
-        if not self._reveil_en_cours:
+        if not self._escalade_pertinente():
             return
 
         cfg = self.entry.data
@@ -1242,6 +1416,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
                 await self.hass.services.async_call(
                     "media_player", "volume_set",
                     {"entity_id": cfg[CONF_MEDIA_PLAYER], "volume_level": 1.0},
+                    blocking=True,
                 )
             except Exception as exc:
                 _LOGGER.error("Erreur escalade volume: %s", exc)
@@ -1252,6 +1427,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
                 await self.hass.services.async_call(
                     "light", "turn_on",
                     {"entity_id": cfg[CONF_LUMIERE], "brightness_pct": 100},
+                    blocking=True,
                 )
             except Exception as exc:
                 _LOGGER.error("Erreur escalade lumière: %s", exc)
@@ -1294,8 +1470,21 @@ class ReveilCoordinator(DataUpdateCoordinator):
     # ── Snooze / Stop / Skip ────────────────────────────────────
 
     async def snooze(self) -> None:
+        """Met la sonnerie en pause pour la durée configurée.
+
+        L'attente se fait dans une tâche de fond : le service smartwake.snooze
+        bloquait sinon l'appelant pendant toute la durée du snooze (5 min par
+        défaut), ce qui figeait l'automatisation ou le script appelant.
+        """
         if not self._reveil_en_cours:
             return
+        # Sans ce garde, deux appuis rapprochés (notification + bouton)
+        # lançaient deux minuteries concurrentes qui relançaient la musique
+        # chacune de leur côté.
+        if self._statut == STATUT_SNOOZED:
+            _LOGGER.debug("Snooze déjà en cours pour '%s'", self.entry.title)
+            return
+
         max_snooze = self.entry.data.get(CONF_SNOOZE_MAX, DEFAULT_SNOOZE_MAX)
         if self._snooze_count >= max_snooze:
             _LOGGER.info("Snooze max atteint pour '%s'", self.entry.title)
@@ -1309,13 +1498,13 @@ class ReveilCoordinator(DataUpdateCoordinator):
         self._notify()
 
         cfg = self.entry.data
-        duree = cfg.get(CONF_SNOOZE_DUREE, DEFAULT_SNOOZE_DUREE)
 
         if cfg.get(CONF_MUSIQUE_ACTIVEE) and cfg.get(CONF_MEDIA_PLAYER):
             try:
                 await self.hass.services.async_call(
                     "media_player", "media_pause",
                     {"entity_id": cfg[CONF_MEDIA_PLAYER]},
+                    blocking=True,
                 )
             except Exception as exc:
                 _LOGGER.error("Erreur pause snooze: %s", exc)
@@ -1323,14 +1512,22 @@ class ReveilCoordinator(DataUpdateCoordinator):
         if cfg.get(CONF_LUMIERE_ACTIVEE) and cfg.get(CONF_LUMIERE):
             try:
                 await self.hass.services.async_call(
-                    "light", "turn_off", {"entity_id": cfg[CONF_LUMIERE]}
+                    "light", "turn_off", {"entity_id": cfg[CONF_LUMIERE]},
+                    blocking=True,
                 )
             except Exception as exc:
                 _LOGGER.error("Erreur extinction snooze: %s", exc)
 
+        self._cancel_snooze = self.hass.async_create_task(self._reprendre_apres_snooze())
+
+    async def _reprendre_apres_snooze(self) -> None:
+        """Relance la sonnerie à l'issue du snooze."""
+        cfg = self.entry.data
+        duree = cfg.get(CONF_SNOOZE_DUREE, DEFAULT_SNOOZE_DUREE)
         await asyncio.sleep(duree * 60)
 
-        if not self._reveil_en_cours:
+        # Un stop ou un nouveau cycle peut être survenu entre-temps
+        if not self._reveil_en_cours or self._statut != STATUT_SNOOZED:
             return
         self._statut = STATUT_RINGING
         self._notify()
@@ -1340,20 +1537,29 @@ class ReveilCoordinator(DataUpdateCoordinator):
                 await self.hass.services.async_call(
                     "media_player", "media_play",
                     {"entity_id": cfg[CONF_MEDIA_PLAYER]},
+                    blocking=True,
                 )
             except Exception as exc:
                 _LOGGER.error("Erreur reprise snooze: %s", exc)
 
     async def stop(self, raison: str = "manual") -> None:
-        """Arrête le cycle de réveil."""
-        if not self._reveil_en_cours:
+        """Arrête le cycle de réveil, pré-réveil compris.
+
+        Le garde ne testait que _reveil_en_cours, vrai à partir de la sonnerie
+        seulement : pendant toute la phase de pré-réveil (jusqu'à 45 min), le
+        bouton Stop et le service smartwake.stop ne faisaient rien, laissant
+        tourner radiateur, chauffe-eau, aube et cafetière.
+        """
+        if not self._reveil_en_cours and self._statut != STATUT_PREWAKE:
             return
 
-        for task in (self._cancel_cycle, self._cancel_escalade, *self._cancel_rampes):
+        for task in (self._cancel_cycle, self._cancel_escalade,
+                     self._cancel_snooze, *self._cancel_rampes):
             if task and not task.done():
                 task.cancel()
         self._cancel_cycle = None
         self._cancel_escalade = None
+        self._cancel_snooze = None
         # Les rampes (musique, lumière, volets) tournent en parallèle : sans
         # cette annulation, la montée de volume continuait après le stop.
         self._cancel_rampes = []
@@ -1367,6 +1573,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
                 await self.hass.services.async_call(
                     "media_player", "media_stop",
                     {"entity_id": cfg[CONF_MEDIA_PLAYER]},
+                    blocking=True,
                 )
             except Exception as exc:
                 _LOGGER.error("Erreur stop musique: %s", exc)
@@ -1374,7 +1581,8 @@ class ReveilCoordinator(DataUpdateCoordinator):
         if cfg.get(CONF_LUMIERE_ACTIVEE) and cfg.get(CONF_LUMIERE):
             try:
                 await self.hass.services.async_call(
-                    "light", "turn_off", {"entity_id": cfg[CONF_LUMIERE]}
+                    "light", "turn_off", {"entity_id": cfg[CONF_LUMIERE]},
+                    blocking=True,
                 )
             except Exception as exc:
                 _LOGGER.error("Erreur extinction: %s", exc)
@@ -1408,14 +1616,21 @@ class ReveilCoordinator(DataUpdateCoordinator):
         self._planifier_trigger()
         self._log_event("Réveil arrêté")
         self._fire_event("smartwake_stopped", raison=raison)
+
+        # Mode ponctuel : le réveil ne doit sonner qu'une fois. L'option était
+        # proposée dans l'interface mais n'était lue nulle part.
+        if cfg.get(CONF_PONCTUEL, False):
+            _LOGGER.info("Réveil ponctuel '%s' — désactivation", self.entry.title)
+            self._log_event("Réveil ponctuel — désactivé")
+            await self.set_actif(False)
         self._increment_stat("total_stops")
         if hasattr(self, "_stats") and self._stats is not None:
-            self._stats["dernier_reveil"] = datetime.now().isoformat()
+            self._stats["dernier_reveil"] = dt_util.now().isoformat()
         # Enregistrer le lever réel pour l'apprentissage
         if self._learning is not None:
             try:
                 heure_pgm = self.config.get(CONF_HEURE, "07:00")
-                await self._learning.record_lever(heure_pgm, datetime.now(), self._snooze_count)
+                await self._learning.record_lever(heure_pgm, dt_util.now(), self._snooze_count)
             except Exception as exc:
                 _LOGGER.debug("Erreur enregistrement learning: %s", exc)
         self._notify()
@@ -1424,7 +1639,8 @@ class ReveilCoordinator(DataUpdateCoordinator):
     async def _tts_briefing(self) -> None:
         """Briefing vocal basique (fallback) : utilise le message configuré + météo."""
         cfg = self.entry.data
-        tts_entity = cfg[CONF_TTS_ENTITY]
+        # L'accès direct cfg[CONF_TTS_ENTITY] levait KeyError quand aucune
+        # enceinte n'était configurée. _tts_speak gère déjà ce cas.
         try:
             tts_msg = cfg.get(CONF_TTS_MESSAGE, DEFAULT_TTS_MESSAGE)
             meteo = self.hass.states.get(cfg.get(CONF_WEATHER_ENTITY, "weather.home"))
@@ -1492,9 +1708,13 @@ class ReveilCoordinator(DataUpdateCoordinator):
         from .ai import verify_person_in_bed
         encore_au_lit = await verify_person_in_bed(self.hass, self.entry.data)
         if encore_au_lit:
-            _LOGGER.info("Vérif IA: personne encore au lit — escalade")
-            self._log_event("Vérif IA: personne encore au lit — escalade")
-            await self._escalade(0)  # escalade immédiate
+            _LOGGER.info("Vérif IA: personne encore au lit — relance du réveil")
+            self._log_event("Vérif IA: personne encore au lit — relance")
+            # Passait par _escalade(0), qui sort aussitôt puisque le réveil est
+            # justement arrêté à ce stade : la détection n'avait aucun effet.
+            # On applique le niveau max directement.
+            self._fire_event("smartwake_escalade", level="max")
+            await self._escalade_niveau(1.0, 100, "max")
 
     async def _run_custom_ai(self, trigger: str) -> None:
         """Exécute les AI tasks personnalisées et notifie les résultats."""
@@ -1508,14 +1728,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
         # Notifier chaque résultat
         notify = cfg.get(CONF_NOTIFY_DEVICE)
         for msg in results:
-            if notify:
-                try:
-                    await self.hass.services.async_call(
-                        "notify", "send_message",
-                        {"entity_id": notify, "title": "🤖 SmartWAKE IA", "message": msg},
-                    )
-                except Exception as exc:
-                    _LOGGER.error("Erreur notification AI custom: %s", exc)
+            await self._notifier(notify, "🤖 SmartWAKE IA", msg)
 
     async def sauter_prochain(self) -> None:
         """Saute la prochaine occurrence sans toucher la planification."""
@@ -1549,17 +1762,26 @@ class ReveilCoordinator(DataUpdateCoordinator):
         cfg = self.entry.data
         if not cfg.get("ai_bilan_hebdo", False):
             return
-        bilan = await generate_weekly_report(
-            self.hass, cfg, self._snooze_count, "historique non disponible"
-        )
+        # Les statistiques d'apprentissage étaient collectées dans le .storage
+        # mais get_stats() n'avait aucun appelant : le bilan recevait la chaîne
+        # « historique non disponible » et self._snooze_count, nul hors cycle.
+        stats = self._learning.get_stats() if self._learning else {}
+        if stats.get("disponible"):
+            historique = (
+                f"{stats['nb_levers']} levers enregistrés, "
+                f"écart moyen {stats['ecart_moyen_min']:+.0f} min "
+                f"(écart-type {stats['ecart_type_min']:.0f} min), "
+                f"{stats['snooze_moyen']:.1f} snooze par réveil, "
+                f"rythme {'régulier' if stats.get('regulier') else 'irrégulier'}"
+            )
+            snoozes = stats.get("snooze_moyen", self._snooze_count)
+        else:
+            historique = stats.get("message", "historique non disponible")
+            snoozes = self._snooze_count
+
+        bilan = await generate_weekly_report(self.hass, cfg, snoozes, historique)
         if bilan:
-            notify_device = cfg.get(CONF_NOTIFY_DEVICE, "")
-            if notify_device:
-                try:
-                    await self.hass.services.async_call(
-                        "notify", "send_message",
-                        {"entity_id": notify_device, "title": "🛏️ Bilan sommeil", "message": bilan},
-                    )
-                    self._log_event("Bilan hebdo IA envoyé")
-                except Exception as exc:
-                    _LOGGER.error("Erreur envoi bilan hebdo: %s", exc)
+            if await self._notifier(
+                cfg.get(CONF_NOTIFY_DEVICE, ""), "🛏️ Bilan sommeil", bilan
+            ):
+                self._log_event("Bilan hebdo IA envoyé")

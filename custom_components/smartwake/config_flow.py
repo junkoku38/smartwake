@@ -396,7 +396,6 @@ class SmartWAKEOptionsFlow(config_entries.OptionsFlow):
                     )
                 ),
                 vol.Optional(CONF_PONCTUEL, default=data.get(CONF_PONCTUEL, False)): bool,
-                vol.Optional(CONF_SKIP_PROCHAIN, default=data.get(CONF_SKIP_PROCHAIN, False)): bool,
                 vol.Optional(CONF_MODE_VACANCES, default=data.get(CONF_MODE_VACANCES, False)): bool,
                 vol.Optional(CONF_MODE_VACANCES_ENTITY, default=data.get(CONF_MODE_VACANCES_ENTITY) or ""): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain=["calendar", "input_boolean", "binary_sensor", "person"])

@@ -45,17 +45,34 @@ class LearningManager:
         """Sauvegarde les données."""
         await self._store.async_save(self._data)
 
+    @staticmethod
+    def _ecart_minutes(heure_programmee: str, heure_reelle: datetime) -> float:
+        """Écart en minutes entre l'heure prévue et le lever réel.
+
+        L'heure prévue était recalée sur la date du lever sans tenir compte du
+        passage de minuit : un stop à 00:10 pour un réveil de 23:50 donnait
+        −1420 min au lieu de +20.
+        """
+        try:
+            h, m = (int(x) for x in heure_programmee.split(":")[:2])
+        except (ValueError, IndexError):
+            return 0.0
+        prevu = heure_reelle.replace(hour=h, minute=m, second=0, microsecond=0)
+        ecart = (heure_reelle - prevu).total_seconds() / 60
+        # Au-delà de 12 h, c'est un franchissement de minuit
+        if ecart > 720:
+            ecart -= 1440
+        elif ecart < -720:
+            ecart += 1440
+        return ecart
+
     async def record_lever(self, heure_programmee: str, heure_reelle: datetime, snoozes: int) -> None:
         """Enregistre un lever réel."""
         self._data.setdefault("levers", []).append({
             "date": heure_reelle.date().isoformat(),
             "heure_programmee": heure_programmee,
             "heure_reelle": heure_reelle.isoformat(),
-            "ecart_min": (heure_reelle - heure_reelle.replace(
-                hour=int(heure_programmee.split(":")[0]),
-                minute=int(heure_programmee.split(":")[1]),
-                second=0, microsecond=0
-            )).total_seconds() / 60,
+            "ecart_min": self._ecart_minutes(heure_programmee, heure_reelle),
             "snoozes": snoozes,
         })
         self._data.setdefault("snoozes", []).append(snoozes)

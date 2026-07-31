@@ -202,12 +202,49 @@ async def test_coordinator_set_jours(coordinator):
 
 @pytest.mark.asyncio
 async def test_coordinator_snooze_max(coordinator):
+    """Le nombre de snoozes est plafonné par snooze_max.
+
+    Chaque snooze suppose que la sonnerie a reprise entre-temps : la garde
+    anti-réentrance refuse un second snooze pendant un snooze en cours.
+    """
     await coordinator.set_actif(True)
     coordinator._reveil_en_cours = True
     coordinator._snooze_count = 0
     for _ in range(3):
+        coordinator._statut = "ringing"  # la sonnerie a reprise
         await coordinator.snooze()
     assert coordinator.snooze_count == 2  # max atteint
+
+
+@pytest.mark.asyncio
+async def test_snooze_non_reentrant(coordinator):
+    """Régression : deux appuis rapprochés (notification + bouton) lançaient
+    deux minuteries concurrentes, chacune relançant la musique."""
+    await coordinator.set_actif(True)
+    coordinator._reveil_en_cours = True
+    coordinator._statut = "ringing"
+
+    await coordinator.snooze()
+    assert coordinator.snooze_count == 1
+    await coordinator.snooze()  # ignoré : snooze déjà en cours
+    assert coordinator.snooze_count == 1
+
+
+@pytest.mark.asyncio
+async def test_snooze_ne_bloque_pas_l_appelant(coordinator):
+    """Régression : snooze() attendait la durée complète du snooze, bloquant
+    le service smartwake.snooze et donc l'automatisation appelante."""
+    coordinator.entry.data = {**coordinator.entry.data, "snooze_duree": 5}
+    await coordinator.set_actif(True)
+    coordinator._reveil_en_cours = True
+    coordinator._statut = "ringing"
+
+    debut = asyncio.get_event_loop().time()
+    await coordinator.snooze()
+    ecoule = asyncio.get_event_loop().time() - debut
+
+    assert ecoule < 1, f"snooze() a bloqué {ecoule:.1f} s"
+    assert coordinator._cancel_snooze is not None
 
 
 @pytest.mark.asyncio
@@ -504,9 +541,14 @@ def test_aucun_nom_non_defini():
     import glob
     import os
 
-    builtins_ok = set(dir(__builtins__)) if isinstance(__builtins__, dict) is False else set(__builtins__)
     import builtins as _b
+
     builtins_ok = set(dir(_b))
+    # Variables spéciales fournies par l'interpréteur à chaque module
+    builtins_ok |= {
+        "__file__", "__name__", "__doc__", "__package__", "__spec__",
+        "__loader__", "__builtins__", "__debug__",
+    }
 
     erreurs = []
     base = os.path.join("custom_components", "smartwake")
@@ -950,3 +992,154 @@ async def test_tts_sans_moteur_ne_plante_pas(coordinator):
     await coordinator._tts_speak("Bonjour")
 
     assert "tts" not in appels
+
+
+# ── Régression : appels de services Home Assistant ─────────────
+
+def test_tous_les_appels_de_service_sont_bloquants():
+    """Régression : aucun appel n'utilisait blocking=True. Un appel non
+    bloquant ne remonte pas l'échec du service cible, si bien que les blocs
+    except et les boucles de reprise (3 tentatives musique, 2 volets) ne
+    pouvaient rien détecter : musique_ok passait à True dès la première
+    itération même avec un media_player injoignable.
+    """
+    import ast
+
+    src = open("custom_components/smartwake/coordinator.py", encoding="utf-8").read()
+    manquants = []
+    for node in ast.walk(ast.parse(src)):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
+            continue
+        if node.func.attr != "async_call":
+            continue
+        if not (isinstance(node.func.value, ast.Attribute)
+                and node.func.value.attr == "services"):
+            continue
+        if not any(k.arg == "blocking" for k in node.keywords):
+            manquants.append(node.lineno)
+
+    assert not manquants, f"appels sans blocking=True aux lignes {manquants}"
+
+
+def test_appels_ia_bloquants_avec_return_response():
+    """Régression : return_response=True sans blocking=True lève
+    ServiceValidationError côté Home Assistant. L'exception étant capturée,
+    toutes les fonctions IA échouaient silencieusement."""
+    import ast
+
+    src = open("custom_components/smartwake/ai.py", encoding="utf-8").read()
+    for node in ast.walk(ast.parse(src)):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
+            continue
+        if node.func.attr != "async_call":
+            continue
+        kw = {k.arg for k in node.keywords}
+        if "return_response" in kw:
+            assert "blocking" in kw, (
+                f"ligne {node.lineno} : return_response exige blocking=True"
+            )
+
+
+def test_notification_avec_actions_passe_par_le_service_historique():
+    """Régression : l'entity service notify.send_message n'accepte que
+    message et title. Passer une clé data — donc des boutons d'action — fait
+    échouer la validation, si bien que la notification actionnable ne partait
+    jamais."""
+    src = open("custom_components/smartwake/coordinator.py", encoding="utf-8").read()
+    # Un seul appel à send_message doit subsister (le repli sans actions)
+    assert src.count('"notify", "send_message"') == 1
+    # et il ne doit pas transporter de clé data
+    bloc = src[src.index('"notify", "send_message"'):]
+    bloc = bloc[:bloc.index(")")]
+    assert '"data"' not in bloc and "charge" not in bloc
+
+
+@pytest.mark.asyncio
+async def test_notification_actionnable_utilise_le_service_legacy(coordinator):
+    """Avec des actions, l'appel doit viser notify.<service>, pas l'entity
+    service."""
+    coordinator.entry.data = {
+        **coordinator.entry.data,
+        "notify_device": "notify.mobile_app_test",
+    }
+    appels = []
+
+    async def _call(domain, service, data=None, **kw):
+        appels.append((domain, service, data or {}))
+
+    coordinator.hass.services.async_call = _call
+    coordinator.hass.services.has_service = lambda d, s: True
+
+    await coordinator._envoyer_notification()
+
+    assert len(appels) == 1
+    domain, service, data = appels[0]
+    assert (domain, service) == ("notify", "mobile_app_test")
+    assert "actions" in data["data"], "les boutons doivent être transmis"
+    assert "entity_id" not in data
+
+
+# ── Régression : escalade et snooze ────────────────────────────
+
+@pytest.mark.asyncio
+async def test_escalade_ignoree_pendant_un_snooze(coordinator):
+    """Régression : l'escalade ne testait que _reveil_en_cours, vrai aussi
+    pendant un snooze. Avec les valeurs par défaut (snooze 5 min, escalade
+    5 min), les lumières passaient à 100 % en pleine période de snooze."""
+    coordinator._reveil_en_cours = True
+    coordinator._statut = "snoozed"
+    assert coordinator._escalade_pertinente() is False
+
+    coordinator._statut = "ringing"
+    assert coordinator._escalade_pertinente() is True
+
+
+# ── Régression : luminosité progressive ────────────────────────
+
+@pytest.mark.asyncio
+async def test_lumiere_atteint_la_luminosite_reglee(coordinator):
+    """Régression : la rampe envoyait 20 fois brightness_step_pct: 1, soit
+    20 % au total quel que soit le réglage « Luminosité max »."""
+    coordinator.entry.data = {
+        **coordinator.entry.data,
+        "lumiere": "light.chambre",
+        "lumiere_activee": True,
+        "brightness_max": 200,
+        "duree_progressive": 1,
+    }
+    appels = []
+
+    async def _call(domain, service, data=None, **kw):
+        appels.append(data or {})
+
+    coordinator.hass.services.async_call = _call
+
+    await coordinator._cycle_lumiere_progressive()
+
+    assert appels, "aucun appel émis"
+    assert all("brightness" in a for a in appels), "doit viser une valeur absolue"
+    assert not any("brightness_step_pct" in a for a in appels)
+    assert appels[-1]["brightness"] == 200, (
+        f"la rampe doit finir à 200, obtenu {appels[-1]['brightness']}"
+    )
+    # Progression monotone
+    valeurs = [a["brightness"] for a in appels]
+    assert valeurs == sorted(valeurs)
+
+
+# ── Régression : passage de minuit ─────────────────────────────
+
+def test_ecart_lever_gere_le_passage_minuit():
+    """Régression : un stop à 00:10 pour un réveil programmé à 23:50 donnait
+    −1420 min au lieu de +20."""
+    _stub_storage_module()
+    from custom_components.smartwake.learning import LearningManager
+
+    reel = datetime(2026, 7, 15, 0, 10)
+    assert LearningManager._ecart_minutes("23:50", reel) == pytest.approx(20)
+
+    reel2 = datetime(2026, 7, 15, 23, 50)
+    assert LearningManager._ecart_minutes("00:10", reel2) == pytest.approx(-20)
+
+    reel3 = datetime(2026, 7, 15, 7, 12)
+    assert LearningManager._ecart_minutes("07:00", reel3) == pytest.approx(12)

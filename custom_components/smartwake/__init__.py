@@ -20,6 +20,7 @@ from .const import (
     SERVICE_SNOOZE,
     SERVICE_STOP,
     SERVICE_BILAN_HEBDO,
+    integration_version,
 )
 from .coordinator import ReveilCoordinator
 
@@ -106,7 +107,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         name=entry.title,
         manufacturer="SmartWAKE",
         model="Progressive alarm",
-        sw_version="2.0.0",
+        sw_version=integration_version(),
     )
 
     coordinator = ReveilCoordinator(hass, entry)
