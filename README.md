@@ -1,9 +1,9 @@
-# Réveil progressif — Intégration Home Assistant
+# SmartWAKE — Intégration Home Assistant
 
 <p align="center">
   <img src="https://img.shields.io/badge/Home%20Assistant-2024.1%2B-41BDF5?logo=home-assistant&logoColor=white" />
   <img src="https://img.shields.io/badge/HACS-Custom-41BDF5?logo=home-assistant-community-store&logoColor=white" />
-  <img src="https://img.shields.io/badge/version-2.0.0-blue" />
+  <img src="https://img.shields.io/badge/version-2.1.0-blue" />
   <img src="https://img.shields.io/badge/python-3.12%2B-yellow" />
 </p>
 
@@ -60,17 +60,17 @@ Un réveil domotique complet qui ne se contente pas de sonner : il **prépare la
 
 1. Ajoutez ce dépôt dans HACS :
    - *HACS → Integrations → ⋮ → Custom repositories*
-   - URL : `https://github.com/junkoku38/reveil_progressif`
+   - URL : `https://github.com/junkoku38/smartwake`
    - Category : **Integration**
-2. Cliquez **Install** sur "Réveil progressif"
+2. Cliquez **Install** sur "SmartWAKE"
 3. **Redémarrez** Home Assistant
-4. *Paramètres → Appareils & Services → Ajouter une intégration* → cherchez **"Réveil progressif"**
+4. *Paramètres → Appareils & Services → Ajouter une intégration* → cherchez **"SmartWAKE"**
 
 ### Manuellement
 
-1. Copiez le dossier `custom_components/reveil_progressif/` dans votre dossier `/config/custom_components/`
+1. Copiez le dossier `custom_components/smartwake/` dans votre dossier `/config/custom_components/`
 2. Redémarrez Home Assistant
-3. *Paramètres → Appareils & Services → Ajouter une intégration* → "Réveil progressif"
+3. *Paramètres → Appareils & Services → Ajouter une intégration* → "SmartWAKE"
 
 ## Configuration
 
@@ -121,11 +121,11 @@ Tous les paramètres sont éditables ensuite via *Configurer* sur l'intégration
 
 | Service | Description |
 |---------|-------------|
-| `reveil_progressif.declencher` | Déclenche manuellement le cycle de réveil |
-| `reveil_progressif.snooze` | Active le snooze |
-| `reveil_progressif.stop` | Arrête immédiatement le cycle |
-| `reveil_progressif.sauter_prochain` | Saute le prochain réveil |
-| `reveil_progressif.reset` | Remet à zéro l'état |
+| `smartwake.declencher` | Déclenche manuellement le cycle de réveil |
+| `smartwake.snooze` | Active le snooze |
+| `smartwake.stop` | Arrête immédiatement le cycle |
+| `smartwake.sauter_prochain` | Saute le prochain réveil |
+| `smartwake.reset` | Remet à zéro l'état |
 
 ## Intégrations recommandées
 

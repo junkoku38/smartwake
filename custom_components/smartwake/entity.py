@@ -12,7 +12,7 @@ def make_device_info(entry: ConfigEntry) -> DeviceInfo:
     return DeviceInfo(
         identifiers={(DOMAIN, entry.entry_id)},
         name=entry.title,
-        manufacturer="Réveil progressif",
+        manufacturer="SmartWAKE",
         model="Progressive alarm",
         sw_version="2.0.0",
     )

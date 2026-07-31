@@ -2,26 +2,26 @@
   "declencher": {
     "name": "Déclencher manuellement",
     "description": "Lance manuellement le cycle de réveil.",
-    "target": {"entity": {"integration": "reveil_progressif", "domain": "switch"}}
+    "target": {"entity": {"integration": "smartwake", "domain": "switch"}}
   },
   "snooze": {
     "name": "Snooze",
     "description": "Active le snooze pendant le cycle en cours.",
-    "target": {"entity": {"integration": "reveil_progressif", "domain": "switch"}}
+    "target": {"entity": {"integration": "smartwake", "domain": "switch"}}
   },
   "stop": {
     "name": "Stop",
     "description": "Arrête immédiatement le cycle de réveil.",
-    "target": {"entity": {"integration": "reveil_progressif", "domain": "switch"}}
+    "target": {"entity": {"integration": "smartwake", "domain": "switch"}}
   },
   "sauter_prochain": {
     "name": "Sauter le prochain",
     "description": "Saute le prochain réveil sans toucher à la planification.",
-    "target": {"entity": {"integration": "reveil_progressif", "domain": "switch"}}
+    "target": {"entity": {"integration": "smartwake", "domain": "switch"}}
   },
   "reset": {
     "name": "Reset",
     "description": "Remet à zéro l'état du réveil.",
-    "target": {"entity": {"integration": "reveil_progressif", "domain": "switch"}}
+    "target": {"entity": {"integration": "smartwake", "domain": "switch"}}
   }
 }

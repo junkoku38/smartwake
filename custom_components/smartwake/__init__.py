@@ -1,4 +1,4 @@
-"""Intégration Réveil progressif — point d'entrée."""
+"""Intégration SmartWAKE — point d'entrée."""
 
 from __future__ import annotations
 
@@ -87,7 +87,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         config_entry_id=entry.entry_id,
         identifiers={(DOMAIN, entry.entry_id)},
         name=entry.title,
-        manufacturer="Réveil progressif",
+        manufacturer="SmartWAKE",
         model="Progressive alarm",
         sw_version="2.0.0",
     )
@@ -101,7 +101,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
 
-    _LOGGER.info("Réveil progressif '%s' configuré", entry.title)
+    _LOGGER.info("SmartWAKE '%s' configuré", entry.title)
     return True
 
 
@@ -115,7 +115,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    _LOGGER.info("Réveil progressif '%s' supprimé", entry.title)
+    _LOGGER.info("SmartWAKE '%s' supprimé", entry.title)
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:

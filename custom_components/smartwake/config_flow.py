@@ -1,4 +1,4 @@
-"""Config flow multi-étapes pour l'intégration Réveil progressif."""
+"""Config flow multi-étapes pour l'intégration SmartWAKE."""
 
 from __future__ import annotations
 
@@ -204,7 +204,7 @@ STEP_NOTIF_SCHEMA = vol.Schema(
 )
 
 
-class ReveilProgressifConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+class SmartWAKEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Gestion du flux de configuration multi-étapes."""
 
     VERSION = 2

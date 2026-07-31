@@ -129,7 +129,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
         super().__init__(
             hass,
             _LOGGER,
-            name=f"reveil_progressif_{entry.entry_id}",
+            name=f"smartwake_{entry.entry_id}",
             update_interval=timedelta(seconds=60),
         )
         self.entry = entry
@@ -247,7 +247,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
             "skip_prochain": self._skip_prochain,
         })
 
-    def _log_event(self, message: str, domain: str = "reveil_progressif") -> None:
+    def _log_event(self, message: str, domain: str = "smartwake") -> None:
         """Journalise un événement dans le logbook HA."""
         try:
             self.hass.bus.async_fire(

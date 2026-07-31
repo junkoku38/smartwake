@@ -1,9 +1,9 @@
 {
-  "name": "Réveil progressif",
+  "name": "SmartWAKE",
   "content_in_root": false,
   "render_readme": true,
   "zip_release": true,
-  "filename": "reveil_progressif.zip",
+  "filename": "smartwake.zip",
   "country": ["FR"],
   "homeassistant": "2024.1.0"
 }

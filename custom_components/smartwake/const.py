@@ -1,6 +1,6 @@
-"""Constantes pour l'intégration Réveil progressif."""
+"""Constantes pour l'intégration SmartWAKE."""
 
-DOMAIN = "reveil_progressif"
+DOMAIN = "smartwake"
 
 # ── Clés config flow ──────────────────────────────────────────
 CONF_HEURE = "heure"
