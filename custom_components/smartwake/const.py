@@ -53,6 +53,12 @@ CONF_WITHINGS_BED_1 = "withings_bed_1"
 CONF_WITHINGS_BED_2 = "withings_bed_2"
 CONF_BRIGHTNESS_MAX = "brightness_max"
 CONF_DUREE_PROGRESSIVE = "duree_progressive"
+CONF_SCENES_MATIN = "scenes_matin"
+CONF_SCENE_MATIN_ENTITIES = "scene_matin_entities"
+CONF_ESCALADE_INTELLIGENTE = "escalade_intelligente"
+CONF_BRIEFING_MULTI_CAPTEURS = "briefing_multi_capteurs"
+CONF_CAPTEUR_QUALITE_AIR = "capteur_qualite_air"
+CONF_CAPTEUR_CO2 = "capteur_co2"
 
 # ── AI Task ───────────────────────────────────────────────────
 CONF_AI_BRIEFING = "ai_briefing"

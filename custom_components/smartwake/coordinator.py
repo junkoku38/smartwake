@@ -152,6 +152,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
         self._snooze_count = 0
         self._skip_prochain = False
         self._unsub_listeners: list[Callable] = []
+        self._learning: Any = None
 
     # ── Propriétés ──────────────────────────────────────────────
 
@@ -193,29 +194,68 @@ class ReveilCoordinator(DataUpdateCoordinator):
         }
 
     async def async_config_entry_first_refresh(self) -> None:
-        """Premier rafraîchissement — watchdog + planification."""
+        """Premier rafraîchissement — watchdog + planification + learning."""
         self._calculer_prochain()
         await super().async_config_entry_first_refresh()
         # Watchdog : vérifier l'armement au démarrage HA
         self._watchdog()
         # Écouter les actions de notification mobile (Snooze / Stop)
         self._setup_notification_actions()
+        # Initialiser le module d'apprentissage
+        from .learning import LearningManager
+        self._learning = LearningManager(self.hass, self.entry.entry_id)
+        await self._learning.async_load()
 
     def _watchdog(self) -> None:
-        """Vérifie au démarrage HA que l'alarme est cohérente."""
+        """Vérifie au démarrage HA que l'alarme est cohérente + détecte les anomalies."""
         cfg = self.entry.data
+        anomalies = []
+
         if self._actif and self._prochain is None:
             _LOGGER.warning(
                 "Watchdog: réveil '%s' actif mais aucun prochain déclenchement — "
                 "vérifiez la configuration des jours",
                 self.entry.title,
             )
+            anomalies.append("alarme_non_armee")
         elif self._actif:
             _LOGGER.info(
                 "Watchdog: réveil '%s' armé, prochain déclenchement %s",
                 self.entry.title,
                 self._prochain,
             )
+
+        # Détecter si HA a redémarré pendant la nuit (entre 22h et 8h)
+        now = dt_util.now()
+        if now.hour >= 22 or now.hour < 8:
+            _LOGGER.warning(
+                "Anomalie: HA a redémarré à %s (période nocturne) — vérifier que '%s' est armé",
+                now.strftime("%H:%M"),
+                self.entry.title,
+            )
+            anomalies.append("redemarrage_nocturne")
+
+        if anomalies:
+            self._fire_event("smartwake_anomalie", type=anomalies)
+            self._log_event(f"Anomalie détectée: {', '.join(anomalies)}")
+            # Alerter l'utilisateur si notification configurée
+            notify = cfg.get(CONF_NOTIFY_DEVICE)
+            if notify and "alarme_non_armee" in anomalies:
+                try:
+                    self.hass.async_create_task(self._alerter_anomalie(notify, anomalies))
+                except Exception:
+                    pass
+
+    async def _alerter_anomalie(self, notify_device: str, anomalies: list[str]) -> None:
+        """Envoie une alerte si une anomalie est détectée."""
+        msg = "⚠️ Anomalie SmartWAKE: " + ", ".join(anomalies)
+        try:
+            await self.hass.services.async_call(
+                "notify", "send_message",
+                {"entity_id": notify_device, "title": "⚠️ SmartWAKE Anomalie", "message": msg},
+            )
+        except Exception as exc:
+            _LOGGER.error("Erreur alerte anomalie: %s", exc)
 
     def _setup_notification_actions(self) -> None:
         """Écoute les actions REVEIL_SNOOZE / REVEIL_STOP depuis l'app mobile."""
@@ -337,6 +377,29 @@ class ReveilCoordinator(DataUpdateCoordinator):
         except Exception as exc:
             _LOGGER.debug("Erreur logbook: %s", exc)
 
+    def _fire_event(self, event_type: str, **kwargs) -> None:
+        """Émet un événement sur le bus HA pour les automatisations externes.
+
+        Events disponibles:
+          - smartwake_triggered  (heure, jours, prochain)
+          - smartwake_stopped     (raison: manual|snooze_max|mouvement_sdb)
+          - smartwake_snoozed     (count, max)
+          - smartwake_escalade    (level)
+          - smartwake_prewake     (phase: chauffage|aube|cafe)
+          - smartwake_skipped     (prochain_reveil)
+          - smartwake_activated   (heure, prochain)
+          - smartwake_deactivated ()
+        """
+        try:
+            self.hass.bus.async_fire(event_type, {
+                "name": self.entry.title,
+                "entry_id": self.entry.entry_id,
+                "entity_id": f"switch.{self.entry.title.lower().replace(' ', '_')}_actif",
+                **kwargs,
+            })
+        except Exception as exc:
+            _LOGGER.debug("Erreur fire event %s: %s", event_type, exc)
+
     def _increment_stat(self, key: str) -> None:
         """Incrémente un compteur de statistiques."""
         if not hasattr(self, "_stats") or self._stats is None:
@@ -360,12 +423,14 @@ class ReveilCoordinator(DataUpdateCoordinator):
             self._statut = STATUT_IDLE
             self._planifier_trigger()
             self._log_event("Réveil activé")
+            self._fire_event("smartwake_activated", heure=self.config.get(CONF_HEURE, "07:00"), prochain=self._prochain.isoformat() if self._prochain else None)
         else:
             self._statut = STATUT_INACTIF
             self._prochain = None
             self._nettoyer_triggers()
             self._reveil_en_cours = False
             self._log_event("Réveil désactivé")
+            self._fire_event("smartwake_deactivated")
         self._notify()
 
     def _nettoyer_triggers(self) -> None:
@@ -598,6 +663,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
             return
 
         self._statut = STATUT_PREWAKE
+        self._fire_event("smartwake_prewake", phase="demarrage")
         self._notify()
         self.hass.async_create_task(self._executer_prewake())
 
@@ -677,6 +743,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
         self._snooze_count = 0
         self._statut = STATUT_RINGING
         self._log_event("Réveil déclenché")
+        self._fire_event("smartwake_triggered", heure=cfg.get(CONF_HEURE, "07:00"), prochain=self._prochain.isoformat() if self._prochain else None)
         self._increment_stat("total_declenchements")
         self._notify()
 
@@ -737,6 +804,17 @@ class ReveilCoordinator(DataUpdateCoordinator):
         # Arrêt par mouvement salle de bain
         if cfg.get(CONF_MOUVEMENT_STOP, False) and cfg.get(CONF_MOUVEMENT_SDB):
             self._setup_mouvement_stop()
+
+        # Scène matin (éclairage cuisine + couloir + autres pièces)
+        if cfg.get(CONF_SCENES_MATIN, False):
+            await self._activer_scene_matin()
+
+        # Escalade intelligente (progressive au lieu de tout à 100%)
+        if cfg.get(CONF_ESCALADE_INTELLIGENTE, False):
+            self._cancel_escalade = self.hass.async_create_task(self._escalade_intelligente())
+        else:
+            escalade_min = cfg.get(CONF_ESCALADE_MIN, DEFAULT_ESCALADE_MIN)
+            self._cancel_escalade = self.hass.async_create_task(self._escalade(escalade_min))
 
     async def _demarrer_musique(self) -> None:
         """Démarre la musique avec volume progressif. Retry + fallback TTS si échec."""
@@ -854,6 +932,71 @@ class ReveilCoordinator(DataUpdateCoordinator):
         except Exception as exc:
             _LOGGER.error("Erreur ouverture volets au lever: %s", exc)
 
+    async def _activer_scene_matin(self) -> None:
+        """Active la scène matin : éclairage cuisine + couloir + autres pièces."""
+        cfg = self.entry.data
+        entities = cfg.get(CONF_SCENE_MATIN_ENTITIES, [])
+        if not entities:
+            return
+        for entity in entities:
+            try:
+                domain = entity.split(".")[0]
+                if domain == "light":
+                    await self.hass.services.async_call(
+                        "light", "turn_on",
+                        {"entity_id": entity, "brightness_pct": 80, "transition": 30},
+                    )
+                elif domain == "switch":
+                    await self.hass.services.async_call("switch", "turn_on", {"entity_id": entity})
+                elif domain == "scene":
+                    await self.hass.services.async_call("scene", "turn_on", {"entity_id": entity})
+                _LOGGER.info("Scène matin: %s activé", entity)
+            except Exception as exc:
+                _LOGGER.error("Erreur scène matin %s: %s", entity, exc)
+
+    async def _escalade_intelligente(self) -> None:
+        """Escalade progressive : 3 niveaux (doux → moyen → max)."""
+        cfg = self.entry.data
+        # Niveau 1 (5 min) : volume 60%
+        await asyncio.sleep(5 * 60)
+        if not self._reveil_en_cours:
+            return
+        await self._escalade_niveau(0.6, 60, "doux")
+        # Niveau 2 (10 min) : volume 80%
+        await asyncio.sleep(5 * 60)
+        if not self._reveil_en_cours:
+            return
+        await self._escalade_niveau(0.8, 80, "moyen")
+        # Niveau 3 (15 min) : volume 100% + toutes lumières
+        await asyncio.sleep(5 * 60)
+        if not self._reveil_en_cours:
+            return
+        await self._escalade_niveau(1.0, 100, "max")
+        self._log_event("Escalade intelligente : niveau max")
+        self._fire_event("smartwake_escalade", level="max")
+
+    async def _escalade_niveau(self, volume: float, brightness_pct: int, niveau: str) -> None:
+        """Applique un niveau d'escalade."""
+        cfg = self.entry.data
+        _LOGGER.info("Escalade niveau %s pour '%s'", niveau, self.entry.title)
+        self._fire_event("smartwake_escalade", level=niveau)
+        if cfg.get(CONF_MUSIQUE_ACTIVEE) and cfg.get(CONF_MEDIA_PLAYER):
+            try:
+                await self.hass.services.async_call(
+                    "media_player", "volume_set",
+                    {"entity_id": cfg[CONF_MEDIA_PLAYER], "volume_level": volume},
+                )
+            except Exception as exc:
+                _LOGGER.error("Erreur escalade volume: %s", exc)
+        if cfg.get(CONF_LUMIERE_ACTIVEE) and cfg.get(CONF_LUMIERE):
+            try:
+                await self.hass.services.async_call(
+                    "light", "turn_on",
+                    {"entity_id": cfg[CONF_LUMIERE], "brightness_pct": brightness_pct},
+                )
+            except Exception as exc:
+                _LOGGER.error("Erreur escalade lumière: %s", exc)
+
     async def _cycle_lumiere_progressive(self) -> None:
         """Augmentation progressive de la luminosité."""
         cfg = self.entry.data
@@ -911,6 +1054,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
         cfg = self.entry.data
         _LOGGER.info("Escalade déclenchée pour '%s'", self.entry.title)
         self._log_event("Escalade : volume max + lumières 100%")
+        self._fire_event("smartwake_escalade", level="max")
 
         # Volume max
         if cfg.get(CONF_MUSIQUE_ACTIVEE) and cfg.get(CONF_MEDIA_PLAYER):
@@ -959,6 +1103,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
         self._snooze_count += 1
         self._statut = STATUT_SNOOZED
         self._log_event(f"Snooze ({self._snooze_count}/{max_snooze})")
+        self._fire_event("smartwake_snoozed", count=self._snooze_count, max=max_snooze)
         self._increment_stat("total_snoozes")
         self._notify()
 
@@ -998,7 +1143,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
             except Exception as exc:
                 _LOGGER.error("Erreur reprise snooze: %s", exc)
 
-    async def stop(self) -> None:
+    async def stop(self, raison: str = "manual") -> None:
         """Arrête le cycle de réveil."""
         if not self._reveil_en_cours:
             return
@@ -1047,9 +1192,17 @@ class ReveilCoordinator(DataUpdateCoordinator):
         self._statut = STATUT_DONE
         self._calculer_prochain()
         self._log_event("Réveil arrêté")
+        self._fire_event("smartwake_stopped", raison=raison)
         self._increment_stat("total_stops")
         if hasattr(self, "_stats") and self._stats is not None:
             self._stats["dernier_reveil"] = datetime.now().isoformat()
+        # Enregistrer le lever réel pour l'apprentissage
+        if self._learning is not None:
+            try:
+                heure_pgm = self.config.get(CONF_HEURE, "07:00")
+                await self._learning.record_lever(heure_pgm, datetime.now(), self._snooze_count)
+            except Exception as exc:
+                _LOGGER.debug("Erreur enregistrement learning: %s", exc)
         self._notify()
         _LOGGER.info("Réveil '%s' arrêté", self.entry.title)
 

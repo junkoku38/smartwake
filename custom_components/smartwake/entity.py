@@ -14,5 +14,5 @@ def make_device_info(entry: ConfigEntry) -> DeviceInfo:
         name=entry.title,
         manufacturer="SmartWAKE",
         model="Progressive alarm",
-        sw_version="2.3.0",
+        sw_version="2.4.0",
     )

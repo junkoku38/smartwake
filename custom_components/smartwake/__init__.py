@@ -87,6 +87,10 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     hass.services.async_register(DOMAIN, SERVICE_RESET, _handle_reset, schema=SERVICE_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_BILAN_HEBDO, _handle_bilan_hebdo, schema=SERVICE_SCHEMA)
 
+    # Enregistrer les tools Assist (LLM Tool Calling)
+    from .assist import async_setup_assist_tools
+    await async_setup_assist_tools(hass)
+
     return True
 
 
