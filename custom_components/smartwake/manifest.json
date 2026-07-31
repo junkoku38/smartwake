@@ -1,12 +1,13 @@
 {
   "domain": "smartwake",
   "name": "SmartWAKE",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "config_flow": true,
   "documentation": "https://github.com/junkoku38/smartwake",
   "issue_tracker": "https://github.com/junkoku38/smartwake/issues",
   "dependencies": [],
   "codeowners": ["@paul"],
   "iot_class": "local_polling",
-  "requirements": []
+  "requirements": [],
+  "loggers": ["custom_components.smartwake"]
 }

@@ -7,6 +7,7 @@ import logging
 from homeassistant.components.button import ButtonEntity, ButtonEntityDescription
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
@@ -15,10 +16,10 @@ from .entity import make_device_info
 
 _LOGGER = logging.getLogger(__name__)
 
-BTN_STOP = ButtonEntityDescription(key="stop", name="Stop", icon="mdi:stop")
-BTN_SKIP = ButtonEntityDescription(key="skip", name="Sauter prochain", icon="mdi:skip-next")
-BTN_RESET = ButtonEntityDescription(key="reset", name="Reset", icon="mdi:restart")
-BTN_DECLENCHER = ButtonEntityDescription(key="declencher", name="Déclencher", icon="mdi:alarm")
+BTN_STOP = ButtonEntityDescription(key="stop", name="Stop", icon="mdi:alarm-off")
+BTN_SKIP = ButtonEntityDescription(key="skip", name="Sauter prochain", icon="mdi:skip-next", entity_category=EntityCategory.CONFIG)
+BTN_RESET = ButtonEntityDescription(key="reset", name="Reset", icon="mdi:restart", entity_category=EntityCategory.DIAGNOSTIC)
+BTN_DECLENCHER = ButtonEntityDescription(key="declencher", name="Déclencher", icon="mdi:bell-ring")
 
 
 async def async_setup_entry(

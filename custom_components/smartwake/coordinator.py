@@ -115,9 +115,13 @@ def _jours_actifs(mode: str, jours_perso: list[str] | None = None) -> set[int]:
         return {0, 1, 2, 3, 4}
     if mode == "weekend":
         return {5, 6}
-    if mode == "personnalise" and jours_perso:
-        return {JOURS_NUM[j] for j in jours_perso if j in JOURS_NUM}
-    return set(range(7))
+    if mode == "personnalise":
+        if jours_perso:
+            return {JOURS_NUM[j] for j in jours_perso if j in JOURS_NUM}
+        return set()  # personnalise vide = aucun jour
+    if mode in JOURS_NUM:
+        return {JOURS_NUM[mode]}
+    return set(range(7))  # fallback pour mode inconnu
 
 
 def _parse_heure(heure_str: str) -> time:
@@ -332,6 +336,20 @@ class ReveilCoordinator(DataUpdateCoordinator):
             )
         except Exception as exc:
             _LOGGER.debug("Erreur logbook: %s", exc)
+
+    def _increment_stat(self, key: str) -> None:
+        """Incrémente un compteur de statistiques."""
+        if not hasattr(self, "_stats") or self._stats is None:
+            self._stats = {
+                "total_declenchements": 0,
+                "total_snoozes": 0,
+                "total_stops": 0,
+                "dernier_reveil": None,
+                "heures_lever": [],
+            }
+        if key in self._stats:
+            self._stats[key] = self._stats.get(key, 0) + 1
+        self._notify()
 
     # ── Activation ──────────────────────────────────────────────
 
@@ -654,31 +672,63 @@ class ReveilCoordinator(DataUpdateCoordinator):
     # ── Phase réveil ────────────────────────────────────────────
 
     async def _executer_cycle(self) -> None:
-        """Cycle de réveil complet."""
+        """Cycle de réveil complet avec contrôle d'erreurs."""
         self._reveil_en_cours = True
         self._snooze_count = 0
         self._statut = STATUT_RINGING
         self._log_event("Réveil déclenché")
+        self._increment_stat("total_declenchements")
         self._notify()
 
         cfg = self.entry.data
+        erreurs = []
 
         # Musique + volume progressif (avec IA adaptative si activée)
         if cfg.get(CONF_MUSIQUE_ACTIVEE) and cfg.get(CONF_MEDIA_PLAYER):
-            await self._demarrer_musique()
+            try:
+                await self._demarrer_musique()
+            except Exception as exc:
+                erreurs.append("musique")
+                _LOGGER.error("Erreur critique musique: %s", exc)
 
         # Volets si soleil levé
         if cfg.get(CONF_VOLETS):
-            await self._ouvrir_volets()
+            try:
+                await self._ouvrir_volets()
+            except Exception as exc:
+                erreurs.append("volets")
+                _LOGGER.error("Erreur critique volets: %s", exc)
 
         # Lumière si pas déjà allumée par aube
         if cfg.get(CONF_LUMIERE_ACTIVEE) and cfg.get(CONF_LUMIERE):
             if self._statut != STATUT_PREWAKE:
-                await self._cycle_lumiere_progressive()
+                try:
+                    await self._cycle_lumiere_progressive()
+                except Exception as exc:
+                    erreurs.append("lumière")
+                    _LOGGER.error("Erreur critique lumière: %s", exc)
 
         # Notification actionnable
         if cfg.get(CONF_NOTIFICATION_ACTIVEE):
-            await self._envoyer_notification()
+            try:
+                await self._envoyer_notification()
+            except Exception as exc:
+                erreurs.append("notification")
+                _LOGGER.error("Erreur notification: %s", exc)
+
+        # Alerte si tout a échoué
+        if erreurs and not cfg.get(CONF_MUSIQUE_ACTIVEE):
+            self._log_event(f"Sonnerie échouée: {', '.join(erreurs)}")
+            # Notifier l'utilisateur de l'échec
+            notify = cfg.get(CONF_NOTIFY_DEVICE)
+            if notify:
+                try:
+                    await self.hass.services.async_call(
+                        "notify", "send_message",
+                        {"entity_id": notify, "title": "⚠️ SmartWAKE", "message": "Le réveil a échoué — vérifiez la configuration"},
+                    )
+                except Exception:
+                    pass
 
         # Escalade programmée
         escalade_min = cfg.get(CONF_ESCALADE_MIN, DEFAULT_ESCALADE_MIN)
@@ -689,7 +739,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
             self._setup_mouvement_stop()
 
     async def _demarrer_musique(self) -> None:
-        """Démarre la musique avec volume progressif. IA adaptative si activée."""
+        """Démarre la musique avec volume progressif. Retry + fallback TTS si échec."""
         cfg = self.entry.data
         media = cfg[CONF_MEDIA_PLAYER]
         playlist = cfg.get(CONF_PLAYLIST, "")
@@ -706,32 +756,52 @@ class ReveilCoordinator(DataUpdateCoordinator):
                 playlist = chosen
                 self._log_event("Musique adaptative IA")
 
-        try:
-            await self.hass.services.async_call(
-                "media_player", "volume_set",
-                {"entity_id": media, "volume_level": vol_initial},
-            )
-            await self.hass.services.async_call(
-                "media_player", "play_media",
-                {"entity_id": media, "media_content_id": playlist, "media_content_type": "favorite_item_id"},
-            )
-            _LOGGER.info("Musique lancée sur %s", media)
+        musique_ok = False
+        for attempt in range(3):
+            try:
+                await self.hass.services.async_call(
+                    "media_player", "volume_set",
+                    {"entity_id": media, "volume_level": vol_initial},
+                )
+                await self.hass.services.async_call(
+                    "media_player", "play_media",
+                    {"entity_id": media, "media_content_id": playlist, "media_content_type": "favorite_item_id"},
+                )
+                musique_ok = True
+                _LOGGER.info("Musique lancée sur %s (tentative %d)", media, attempt + 1)
+                break
+            except Exception as exc:
+                _LOGGER.warning("Tentative musique %d/3 échouée: %s", attempt + 1, exc)
+                if attempt < 2:
+                    await asyncio.sleep(5)
 
-            # Montée progressive du volume
-            steps = max(duree, 1)
-            increment = (vol_final - vol_initial) / steps
-            for i in range(steps):
-                await asyncio.sleep(60)
-                vol = min(vol_initial + increment * (i + 1), vol_final)
+        if not musique_ok:
+            _LOGGER.error("Musique échouée après 3 tentatives — fallback TTS")
+            self._log_event("Musique échouée — fallback")
+            # Fallback : notification + TTS d'alarme si configuré
+            if cfg.get(CONF_TTS_ENTITY):
                 try:
                     await self.hass.services.async_call(
-                        "media_player", "volume_set",
-                        {"entity_id": media, "volume_level": vol},
+                        "tts", "speak",
+                        {"entity_id": cfg[CONF_TTS_ENTITY], "message": "Il est l'heure de se lever !"},
                     )
                 except Exception as exc:
-                    _LOGGER.error("Erreur volume musique: %s", exc)
-        except Exception as exc:
-            _LOGGER.error("Erreur démarrage musique: %s", exc)
+                    _LOGGER.error("Fallback TTS échoué: %s", exc)
+            return
+
+        # Montée progressive du volume
+        steps = max(duree, 1)
+        increment = (vol_final - vol_initial) / steps
+        for i in range(steps):
+            await asyncio.sleep(60)
+            vol = min(vol_initial + increment * (i + 1), vol_final)
+            try:
+                await self.hass.services.async_call(
+                    "media_player", "volume_set",
+                    {"entity_id": media, "volume_level": vol},
+                )
+            except Exception as exc:
+                _LOGGER.error("Erreur volume musique: %s", exc)
 
     async def _ouvrir_volets(self) -> None:
         """Ouvre les volets si le soleil est levé."""
@@ -743,13 +813,46 @@ class ReveilCoordinator(DataUpdateCoordinator):
             sun = self.hass.states.get("sun.sun")
             if sun and sun.state != "above_horizon":
                 _LOGGER.info("Volets fermés — soleil pas encore levé")
+                # Fallback : programmer l'ouverture au lever du soleil
+                self.hass.async_create_task(self._ouvrir_volets_au_lever(volets))
                 return
 
+        for attempt in range(2):
+            try:
+                await self.hass.services.async_call("cover", "open_cover", {"entity_id": volets})
+                _LOGGER.info("Volets ouverts: %s", volets)
+                return
+            except Exception as exc:
+                _LOGGER.warning("Tentative volets %d/2 échouée: %s", attempt + 1, exc)
+                if attempt < 1:
+                    await asyncio.sleep(3)
+        _LOGGER.error("Ouverture volets échouée après 2 tentatives")
+
+    async def _ouvrir_volets_au_lever(self, volets: str) -> None:
+        """Ouvre les volets au lever du soleil (fallback)."""
+        from homeassistant.helpers.event import async_track_state_change
+        opened = False
+
+        def _try_open(*args):
+            nonlocal opened
+            if opened:
+                return
+            sun = self.hass.states.get("sun.sun")
+            if sun and sun.state == "above_horizon":
+                opened = True
+                self.hass.async_create_task(self._open_volets_now(volets))
+
+        unsub = async_track_state_change(self.hass, "sun.sun", _try_open)
+        # Timeout de 2h max
+        await asyncio.sleep(2 * 3600)
+        unsub()
+
+    async def _open_volets_now(self, volets: str) -> None:
         try:
             await self.hass.services.async_call("cover", "open_cover", {"entity_id": volets})
-            _LOGGER.info("Volets ouverts: %s", volets)
+            _LOGGER.info("Volets ouverts au lever du soleil: %s", volets)
         except Exception as exc:
-            _LOGGER.error("Erreur volets: %s", exc)
+            _LOGGER.error("Erreur ouverture volets au lever: %s", exc)
 
     async def _cycle_lumiere_progressive(self) -> None:
         """Augmentation progressive de la luminosité."""
@@ -856,6 +959,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
         self._snooze_count += 1
         self._statut = STATUT_SNOOZED
         self._log_event(f"Snooze ({self._snooze_count}/{max_snooze})")
+        self._increment_stat("total_snoozes")
         self._notify()
 
         cfg = self.entry.data
@@ -943,6 +1047,9 @@ class ReveilCoordinator(DataUpdateCoordinator):
         self._statut = STATUT_DONE
         self._calculer_prochain()
         self._log_event("Réveil arrêté")
+        self._increment_stat("total_stops")
+        if hasattr(self, "_stats") and self._stats is not None:
+            self._stats["dernier_reveil"] = datetime.now().isoformat()
         self._notify()
         _LOGGER.info("Réveil '%s' arrêté", self.entry.title)
 
