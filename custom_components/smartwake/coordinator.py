@@ -832,18 +832,31 @@ class ReveilCoordinator(DataUpdateCoordinator):
         """Démarre la musique avec volume progressif. Retry + fallback TTS si échec."""
         cfg = self.entry.data
         media = cfg[CONF_MEDIA_PLAYER]
-        playlist = cfg.get(CONF_PLAYLIST, "")
+        playlist_raw = cfg.get(CONF_PLAYLIST, "")
         vol_initial = cfg.get(CONF_VOLUME_INITIAL, DEFAULT_VOLUME_INITIAL)
         vol_final = cfg.get(CONF_VOLUME_FINAL, DEFAULT_VOLUME_FINAL)
         duree = cfg.get(CONF_VOLUME_DUREE, DEFAULT_VOLUME_DUREE)
 
+        # MediaSelector retourne un dict {content_id, content_type} ou un string
+        content_id = ""
+        content_type = "music"
+        if isinstance(playlist_raw, dict):
+            content_id = playlist_raw.get("content_id", "")
+            content_type = playlist_raw.get("content_type", "music")
+        elif isinstance(playlist_raw, str):
+            content_id = playlist_raw
+        elif playlist_raw and hasattr(playlist_raw, "get"):
+            content_id = playlist_raw.get("content_id", "")
+            content_type = playlist_raw.get("content_type", "music")
+
         # Musique adaptative IA : choisir la playlist selon le contexte
         if cfg.get(CONF_AI_MUSIQUE_ADAPT):
             from .ai import choose_adaptive_music
-            playlist_options = [playlist, "France Inter", "Radio Nova", "Jazz doux"]
+            playlist_options = [content_id, "France Inter", "Radio Nova", "Jazz doux"]
             chosen = await choose_adaptive_music(self.hass, cfg, playlist_options)
             if chosen:
-                playlist = chosen
+                content_id = chosen
+                content_type = "music"
                 self._log_event("Musique adaptative IA")
 
         musique_ok = False
@@ -855,7 +868,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
                 )
                 await self.hass.services.async_call(
                     "media_player", "play_media",
-                    {"entity_id": media, "media_content_id": playlist, "media_content_type": "favorite_item_id"},
+                    {"entity_id": media, "media_content_id": content_id, "media_content_type": content_type},
                 )
                 musique_ok = True
                 _LOGGER.info("Musique lancée sur %s (tentative %d)", media, attempt + 1)

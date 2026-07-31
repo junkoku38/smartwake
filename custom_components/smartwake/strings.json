@@ -63,7 +63,7 @@
         "data": {
           "musique_activee": "Activer la musique",
           "media_player": "Lecteur de musique",
-          "playlist": "Playlist / URL radio",
+          "playlist": "Source musicale (playlist / radio / favoris)",
           "volume_initial": "Volume initial",
           "volume_final": "Volume final",
           "volume_duree": "Durée montée volume (min)"
@@ -71,7 +71,7 @@
         "data_description": {
           "musique_activee": "Active la musique au moment du réveil.",
           "media_player": "Le lecteur qui jouera la musique (Sonos, Google Cast, Squeezebox...).",
-          "playlist": "ID de playlist Spotify (ex : FV:2/7) ou URL de radio (ex : https://icecast.radiofrance.fr/franceinter-midfi.mp3).",
+          "playlist": "Naviguez dans le Media Browser de HA pour choisir une playlist Spotify, une radio, un favoris ou un fichier local. Le sélecteur affiche le contenu disponible sur votre media player.",
           "volume_initial": "Volume de départ, faible pour un réveil en douceur (ex : 0.05 = 5%).",
           "volume_final": "Volume final atteint après la montée progressive (ex : 0.35 = 35%).",
           "volume_duree": "Durée de la montée du volume, en minutes. Le volume augmente par paliers."

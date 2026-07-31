@@ -344,7 +344,7 @@ class SmartWAKEOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             new_data = {**data, **user_input}
             self.hass.config_entries.async_update_entry(self._config_entry, data=new_data)
-            return self.async_create_entry(title="", data=user_input)
+            return await self.async_step_init()
         return self.async_show_form(
             step_id="base",
             data_schema=vol.Schema({
@@ -375,13 +375,13 @@ class SmartWAKEOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             new_data = {**data, **user_input}
             self.hass.config_entries.async_update_entry(self._config_entry, data=new_data)
-            return self.async_create_entry(title="", data=user_input)
+            return await self.async_step_init()
         return self.async_show_form(
             step_id="musique",
             data_schema=vol.Schema({
                 vol.Required(CONF_MUSIQUE_ACTIVEE, default=data.get(CONF_MUSIQUE_ACTIVEE, True)): bool,
                 vol.Optional(CONF_MEDIA_PLAYER, default=data.get(CONF_MEDIA_PLAYER) or ""): _entity("media_player"),
-                vol.Optional(CONF_PLAYLIST, default=data.get(CONF_PLAYLIST, DEFAULT_PLAYLIST)): str,
+                vol.Optional(CONF_PLAYLIST, default=data.get(CONF_PLAYLIST)): selector.MediaSelector(),
                 vol.Optional(CONF_VOLUME_INITIAL, default=data.get(CONF_VOLUME_INITIAL, DEFAULT_VOLUME_INITIAL)): _num(0.01, 1, 0.01),
                 vol.Optional(CONF_VOLUME_FINAL, default=data.get(CONF_VOLUME_FINAL, DEFAULT_VOLUME_FINAL)): _num(0.01, 1, 0.01),
                 vol.Optional(CONF_VOLUME_DUREE, default=data.get(CONF_VOLUME_DUREE, DEFAULT_VOLUME_DUREE)): _num(1, 30, 1, "min"),
@@ -395,7 +395,7 @@ class SmartWAKEOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             new_data = {**data, **user_input}
             self.hass.config_entries.async_update_entry(self._config_entry, data=new_data)
-            return self.async_create_entry(title="", data=user_input)
+            return await self.async_step_init()
         return self.async_show_form(
             step_id="lumiere",
             data_schema=vol.Schema({
@@ -414,7 +414,7 @@ class SmartWAKEOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             new_data = {**data, **user_input}
             self.hass.config_entries.async_update_entry(self._config_entry, data=new_data)
-            return self.async_create_entry(title="", data=user_input)
+            return await self.async_step_init()
         return self.async_show_form(
             step_id="confort",
             data_schema=vol.Schema({
@@ -436,7 +436,7 @@ class SmartWAKEOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             new_data = {**data, **user_input}
             self.hass.config_entries.async_update_entry(self._config_entry, data=new_data)
-            return self.async_create_entry(title="", data=user_input)
+            return await self.async_step_init()
         return self.async_show_form(
             step_id="intelligence",
             data_schema=vol.Schema({
@@ -462,7 +462,7 @@ class SmartWAKEOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             new_data = {**data, **user_input}
             self.hass.config_entries.async_update_entry(self._config_entry, data=new_data)
-            return self.async_create_entry(title="", data=user_input)
+            return await self.async_step_init()
         return self.async_show_form(
             step_id="notification",
             data_schema=vol.Schema({
@@ -485,7 +485,7 @@ class SmartWAKEOptionsFlow(config_entries.OptionsFlow):
         if user_input is not None:
             new_data = {**data, **user_input}
             self.hass.config_entries.async_update_entry(self._config_entry, data=new_data)
-            return self.async_create_entry(title="", data=user_input)
+            return await self.async_step_init()
         return self.async_show_form(
             step_id="ai",
             data_schema=vol.Schema({
