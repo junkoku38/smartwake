@@ -220,7 +220,8 @@
           "ai_custom_enabled": "Activer une AI task personnalisée",
           "ai_custom_prompt": "Votre prompt personnalisé",
           "ai_custom_trigger": "Quand exécuter cette task",
-          "ai_custom_entities": "Entités à inclure dans le contexte"
+          "ai_custom_entities": "Entités à inclure dans le contexte",
+          "sommeil_sensors": "Capteurs de sommeil"
         },
         "data_description": {
           "ai_briefing": "**Recommandé** — Au moment du Stop, l'IA rédige un briefing naturel (météo, premier RDV de l'agenda, temps de trajet, batterie du téléphone) et le lit via TTS. Cochez + sélectionnez l'entité AI Task ci-dessous.\n\n**Prompt utilisé :** « Tu es un assistant matinal. Rédige un briefing parlé de 30 secondes max, en français, ton chaleureux, sans listes ni emojis. Mentionne un conseil pertinent (parapluie, partir plus tôt si trafic, charger le téléphone si <30%). Termine par une phrase motivante courte. »",
@@ -236,7 +237,8 @@
           "ai_custom_enabled": "Active une AI task personnalisée avec **votre propre prompt**. Le résultat est envoyé par notification.",
           "ai_custom_prompt": "Tapez votre prompt ici. Ex : « Analyse la qualité de l'air dans la chambre et donne un conseil pour la journée. » Les valeurs des entités sélectionnées ci-dessous sont ajoutées automatiquement au contexte.",
           "ai_custom_trigger": "Quand exécuter votre task : au déclenchement du réveil, au Stop (quand vous vous levez), ou le soir à 21:30.",
-          "ai_custom_entities": "Sélectionnez les entités dont les valeurs doivent être incluses dans le contexte de votre prompt. Ex : sensor.co2_chambre, sensor.qualite_air, weather.home."
+          "ai_custom_entities": "Sélectionnez les entités dont les valeurs doivent être incluses dans le contexte de votre prompt. Ex : sensor.co2_chambre, sensor.qualite_air, weather.home.",
+          "sommeil_sensors": "Capteurs à transmettre au bilan hebdomadaire : score de sommeil, durées de sommeil profond/léger/paradoxal, réveils nocturnes, endormissement, ronflement… Compatible Withings, Fitbit, Oura ou tout autre capteur. Les moyennes sur 7 jours sont calculées automatiquement."
         }
       }
     }

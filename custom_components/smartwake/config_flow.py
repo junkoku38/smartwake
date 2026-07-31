@@ -18,6 +18,7 @@ from homeassistant.helpers import selector
 
 from .const import (
     CONF_AI_BILAN_HEBDO,
+    CONF_SOMMEIL_SENSORS,
     CONF_AI_BRIEFING,
     CONF_AI_CAMERA_VERIF,
     CONF_AI_CUSTOM_ENABLED,
@@ -548,6 +549,9 @@ class SmartWAKEOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional(CONF_AI_MUSIQUE_ADAPT, default=data.get(CONF_AI_MUSIQUE_ADAPT, False)): bool,
                 vol.Optional(CONF_AI_SUGGESTION_HEURE, default=data.get(CONF_AI_SUGGESTION_HEURE, False)): bool,
                 vol.Optional(CONF_AI_BILAN_HEBDO, default=data.get(CONF_AI_BILAN_HEBDO, False)): bool,
+                vol.Optional(CONF_SOMMEIL_SENSORS, default=data.get(CONF_SOMMEIL_SENSORS, [])): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain=["sensor", "binary_sensor"], multiple=True)
+                ),
                 vol.Optional(CONF_AI_VERIF_LEVER, default=data.get(CONF_AI_VERIF_LEVER, False)): bool,
                 vol.Optional(CONF_AI_CAMERA_VERIF): _entity("camera"),
                 vol.Optional(CONF_WEATHER_ENTITY): _entity("weather"),

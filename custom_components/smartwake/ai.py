@@ -15,6 +15,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_AI_BILAN_HEBDO,
+    CONF_SOMMEIL_SENSORS,
     CONF_AI_BRIEFING,
     CONF_AI_CAMERA_VERIF,
     CONF_AI_CUSTOM_ENABLED,
@@ -223,6 +224,89 @@ async def suggest_wake_time(
     return None
 
 
+async def _resume_capteurs_sommeil(hass: HomeAssistant, cfg: dict) -> str:
+    """Résume les capteurs de sommeil désignés, sur les sept derniers jours.
+
+    Les capteurs de sommeil (Withings, Fitbit, Oura…) publient des agrégats de
+    la nuit écoulée : leur état courant ne renseigne donc que la dernière nuit.
+    On interroge le recorder pour couvrir la semaine, avec repli sur l'état
+    courant s'il est indisponible.
+    """
+    entites: list[str] = list(cfg.get(CONF_SOMMEIL_SENSORS) or [])
+    if not entites:
+        return ""
+
+    def _libelle(entity_id: str) -> str:
+        etat = hass.states.get(entity_id)
+        if etat is None:
+            return entity_id
+        return etat.attributes.get("friendly_name") or entity_id
+
+    def _unite(entity_id: str) -> str:
+        etat = hass.states.get(entity_id)
+        if etat is None:
+            return ""
+        return etat.attributes.get("unit_of_measurement") or ""
+
+    historique: dict[str, list[float]] = {}
+    try:
+        from homeassistant.components.recorder import get_instance, history
+
+        debut = dt_util.now() - timedelta(days=7)
+        brut = await get_instance(hass).async_add_executor_job(
+            lambda: history.get_significant_states(
+                hass, debut, None, entites,
+                minimal_response=True, no_attributes=True,
+            )
+        )
+        for entity_id, etats in (brut or {}).items():
+            valeurs = []
+            for e in etats:
+                v = e.get("state") if isinstance(e, dict) else getattr(e, "state", None)
+                try:
+                    valeurs.append(float(v))
+                except (TypeError, ValueError):
+                    continue
+            if valeurs:
+                historique[entity_id] = valeurs
+    except Exception as exc:  # noqa: BLE001 - le bilan doit rester possible
+        _LOGGER.debug("Historique de sommeil indisponible (%s), état courant utilisé", exc)
+
+    def _fmt(valeur: float, unite: str) -> str:
+        """Rend la valeur lisible : les durées de sommeil sont en secondes."""
+        if unite == "s" and abs(valeur) >= 60:
+            heures, minutes = divmod(int(round(valeur)) // 60, 60)
+            return f"{heures} h {minutes:02d}" if heures else f"{minutes} min"
+        if float(valeur).is_integer():
+            return f"{int(valeur)}{unite}"
+        return f"{valeur:.1f}{unite}"
+
+    lignes = []
+    for entity_id in entites:
+        nom = _libelle(entity_id)
+        unite = _unite(entity_id)
+        valeurs = historique.get(entity_id)
+        if valeurs:
+            moyenne = sum(valeurs) / len(valeurs)
+            lignes.append(
+                f"- {nom} : moyenne {_fmt(moyenne, unite)} "
+                f"(min {_fmt(min(valeurs), unite)}, max {_fmt(max(valeurs), unite)}, "
+                f"{len(valeurs)} nuits)"
+            )
+        else:
+            etat = hass.states.get(entity_id)
+            if etat is None or etat.state in ("unknown", "unavailable"):
+                continue
+            try:
+                lignes.append(f"- {nom} : {_fmt(float(etat.state), unite)} (dernière nuit)")
+            except (TypeError, ValueError):
+                lignes.append(f"- {nom} : {etat.state} (dernière nuit)")
+
+    if not lignes:
+        return ""
+    return "\nDonnées de sommeil mesurées :\n" + "\n".join(lignes)
+
+
 async def generate_weekly_report(
     hass: HomeAssistant, cfg: dict, snoozes_count: int, wake_history: str
 ) -> str | None:
@@ -230,11 +314,15 @@ async def generate_weekly_report(
     if not cfg.get(CONF_AI_BILAN_HEBDO):
         return None
 
+    mesures = await _resume_capteurs_sommeil(hass, cfg)
+
     instructions = f"""Historique de la semaine :
 Snoozes utilisés : {snoozes_count}.
-Heures de lever réelles : {wake_history}.
+Heures de lever réelles : {wake_history}.{mesures}
 Rédige un bilan bienveillant en 3 phrases + 1 conseil concret
-(ex : avancer le coucher de 20 min, réduire le snooze)."""
+(ex : avancer le coucher de 20 min, réduire le snooze).
+Appuie-toi sur les mesures fournies quand il y en a, et ne suppose aucune
+donnée absente."""
 
     result = await _call_ai_task(hass, "Bilan sommeil semaine", instructions, cfg=cfg)
     if result and "data" in result:

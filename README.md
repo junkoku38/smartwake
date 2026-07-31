@@ -73,7 +73,13 @@ Chaque champ a une **description** expliquant ce qu'il fait et pourquoi.
 - **Briefing matinal IA** : briefing naturel (météo, agenda, trajet, batterie)
 - **Musique adaptative** : l'IA choisit la playlist selon la météo
 - **Suggestion d'heure du soir** : notification Accepter/Refuser (l'IA propose, vous validez)
-- **Bilan de sommeil hebdomadaire** : synthèse + recommandations (service `smartwake.bilan_hebdo`)
+- **Bilan de sommeil hebdomadaire** : synthèse + recommandations (service `smartwake.bilan_hebdo`).
+  Désignez vos capteurs de sommeil dans *Options → AI Task → Capteurs de sommeil* :
+  score, durées de sommeil profond/léger/paradoxal, réveils nocturnes,
+  endormissement, ronflement. Compatible Withings, Fitbit, Oura ou tout autre
+  capteur. Les moyennes sur 7 jours sont calculées via le recorder, avec repli
+  sur la dernière nuit s'il est indisponible, et les durées en secondes sont
+  converties en heures et minutes.
 - **Vérification lever caméra** : 10 min après le Stop, escalade si encore au lit
 - **AI tasks personnalisées** : votre propre prompt + déclencheur + entités + notification
 

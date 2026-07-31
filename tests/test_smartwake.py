@@ -1327,3 +1327,88 @@ def test_fusion_efface_les_champs_vides():
     assert entry.data["cafetiere"] == "switch.cafe"
     assert entry.data["heure"] == "07:00", "les clés hors section doivent rester"
     assert entry.data["volets_soleil"] is True
+
+
+# ── Bilan de sommeil : lecture des capteurs configurés ─────────
+
+@pytest.mark.asyncio
+async def test_bilan_sans_capteur_configure(coordinator):
+    """Sans capteur désigné, le résumé est vide et le bilan reste possible."""
+    from custom_components.smartwake.ai import _resume_capteurs_sommeil
+
+    assert await _resume_capteurs_sommeil(coordinator.hass, {}) == ""
+    assert await _resume_capteurs_sommeil(
+        coordinator.hass, {"sommeil_sensors": []}
+    ) == ""
+
+
+@pytest.mark.asyncio
+async def test_bilan_lit_les_capteurs_de_sommeil(coordinator):
+    """Régression : le bilan hebdomadaire ne recevait que le compteur de
+    snoozes et l'historique des levers. Il commentait donc le sommeil sans
+    disposer d'aucune mesure. Les capteurs désignés dans les options doivent
+    apparaître dans les instructions envoyées à l'IA."""
+    from custom_components.smartwake.ai import _resume_capteurs_sommeil
+
+    coordinator.hass.states.set(
+        "sensor.score", "78",
+        {"friendly_name": "Sleep score", "unit_of_measurement": "%"},
+    )
+    coordinator.hass.states.set(
+        "sensor.profond", "5400",
+        {"friendly_name": "Sommeil profond", "unit_of_measurement": "s"},
+    )
+
+    resume = await _resume_capteurs_sommeil(
+        coordinator.hass,
+        {"sommeil_sensors": ["sensor.score", "sensor.profond"]},
+    )
+
+    assert "Sleep score" in resume
+    assert "78%" in resume
+    # Les durées en secondes doivent être rendues lisibles
+    assert "1 h 30" in resume, f"durée non convertie : {resume}"
+    assert "5400" not in resume
+
+
+@pytest.mark.asyncio
+async def test_bilan_ignore_les_capteurs_indisponibles(coordinator):
+    """Un capteur hors service ne doit pas polluer le prompt."""
+    from custom_components.smartwake.ai import _resume_capteurs_sommeil
+
+    coordinator.hass.states.set("sensor.ok", "80", {"friendly_name": "Score"})
+    coordinator.hass.states.set("sensor.hs", "unavailable", {"friendly_name": "HS"})
+
+    resume = await _resume_capteurs_sommeil(
+        coordinator.hass, {"sommeil_sensors": ["sensor.ok", "sensor.hs"]}
+    )
+    assert "Score" in resume
+    assert "HS" not in resume
+    assert "unavailable" not in resume
+
+
+@pytest.mark.asyncio
+async def test_bilan_transmet_les_mesures_a_l_ia(coordinator):
+    """Les mesures doivent bien arriver dans les instructions du prompt."""
+    from custom_components.smartwake import ai
+
+    coordinator.hass.states.set(
+        "sensor.score", "78",
+        {"friendly_name": "Sleep score", "unit_of_measurement": "%"},
+    )
+    captures = {}
+
+    async def _faux_appel(hass, task_name, instructions, *a, **kw):
+        captures["instructions"] = instructions
+        return {"data": "bilan"}
+
+    with patch.object(ai, "_call_ai_task", _faux_appel):
+        res = await ai.generate_weekly_report(
+            coordinator.hass,
+            {"ai_bilan_hebdo": True, "sommeil_sensors": ["sensor.score"]},
+            2, "07:05 en moyenne",
+        )
+
+    assert res == "bilan"
+    assert "Sleep score" in captures["instructions"]
+    assert "78%" in captures["instructions"]

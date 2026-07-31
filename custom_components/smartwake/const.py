@@ -130,6 +130,10 @@ CONF_AI_TASK_ENTITY = "ai_task_entity"
 CONF_AI_MUSIQUE_ADAPT = "ai_musique_adapt"
 CONF_AI_SUGGESTION_HEURE = "ai_suggestion_heure"
 CONF_AI_BILAN_HEBDO = "ai_bilan_hebdo"
+# Capteurs de sommeil à transmettre au bilan hebdomadaire (Withings, Fitbit,
+# Oura, Google Fit…). Le bilan ne recevait auparavant que le compteur de
+# snoozes : il commentait donc le réveil sans voir aucune mesure de sommeil.
+CONF_SOMMEIL_SENSORS = "sommeil_sensors"
 CONF_AI_VERIF_LEVER = "ai_verif_lever"
 CONF_AI_CAMERA_VERIF = "ai_camera_verif"
 CONF_AI_CUSTOM_ENABLED = "ai_custom_enabled"
