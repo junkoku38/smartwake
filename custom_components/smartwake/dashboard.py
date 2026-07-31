@@ -139,11 +139,9 @@ async def inject_dashboard(hass: HomeAssistant, entry: ConfigEntry) -> None:
         _LOGGER.debug("Dashboard trouvé: %s (mode=%s)", dashboard.url_path, dashboard.mode)
         config = None
         try:
-            config = await dashboard.async_load(force=True)
-        except Exception:
-            pass
-        if not config:
-            # Dashboard vierge — créer une config initiale
+            config = await dashboard.async_load(force=False)
+        except Exception as exc:
+            _LOGGER.debug("Dashboard load failed, starting fresh: %s", exc)
             config = {"views": []}
         _LOGGER.debug("Config Lovelace chargée: %d vues", len(config.get("views", [])))
 

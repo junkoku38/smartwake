@@ -227,10 +227,15 @@ class ReveilCoordinator(DataUpdateCoordinator):
                 _LOGGER.info("Action Stop reçue pour '%s'", self.entry.title)
                 self.hass.async_create_task(self.stop())
             elif action and action.startswith("REVEIL_ACCEPTER_"):
-                # Suggestion IA acceptée — appliquer l'heure
+                # Suggestion IA acceptée — valider et appliquer l'heure
                 heure = action.replace("REVEIL_ACCEPTER_", "")
+                import re
+                m = re.match(r"^(\d{1,2}):(\d{2})$", heure)
+                if not m or not (0 <= int(m.group(1)) < 24 and 0 <= int(m.group(2)) < 60):
+                    _LOGGER.warning("Heure invalide reçue via notification: %s", heure)
+                    return
                 _LOGGER.info("Suggestion IA acceptée: %s", heure)
-                self._log_event(f"Suggestion IA acceptée: {heure}")
+                self._log_event("Suggestion IA acceptée")
                 self.hass.async_create_task(self.set_heure(heure))
             elif action == "REVEIL_REFUSER":
                 _LOGGER.info("Suggestion IA refusée")
@@ -288,7 +293,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
                     ]},
                 },
             )
-            self._log_event(f"Suggestion IA envoyée: {heure_proposee}")
+            self._log_event("Suggestion IA envoyée")
         except Exception as exc:
             _LOGGER.error("Erreur envoi suggestion IA: %s", exc)
 
@@ -492,7 +497,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
                             "Réveil adaptatif: %s (RDV %s − %dmin)",
                             reveil.strftime("%H:%M"), start, marge,
                         )
-                        self._log_event(f"Réveil adaptatif: {reveil.strftime('%H:%M')} (RDV à {start})")
+                        self._log_event("Réveil adaptatif déclenché")
                     return reveil.time()
                 break
         except Exception as exc:
@@ -521,7 +526,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
         if sleep_state in ("light", "awake"):
             heure_avancee = (datetime.combine(datetime.today(), heure_defaut) - timedelta(minutes=fenetre)).time()
             _LOGGER.info("Phase sommeil léger détectée — réveil avancé à %s", heure_avancee)
-            self._log_event(f"Phase sommeil léger — réveil avancé à {heure_avancee.strftime('%H:%M')}")
+            self._log_event("Phase sommeil léger — réveil avancé")
             return heure_avancee
         return heure_defaut
 
@@ -699,7 +704,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
             chosen = await choose_adaptive_music(self.hass, cfg, playlist_options)
             if chosen:
                 playlist = chosen
-                self._log_event(f"Musique adaptative IA: {chosen}")
+                self._log_event("Musique adaptative IA")
 
         try:
             await self.hass.services.async_call(

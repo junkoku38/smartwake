@@ -88,7 +88,7 @@
       },
       "ai": {
         "title": "🤖 Étape 7/7 — AI Task (optionnel)",
-        "description": "Fonctionnalités IA — requiert HA ≥ 2025.8 et une intégration AI Task configurée (Ollama local, Anthropic, Google ou OpenAI).\n\n— Briefing matinal naturel rédigé par l'IA\n— Musique adaptative selon le contexte\n— Suggestion d'heure de réveil chaque soir\n— Bilan de sommeil hebdomadaire\n— Vérification du lever par caméra\n\nL'IA ne déclenche jamais la sonnerie. Fallback automatique si indisponible.",
+        "description": "Fonctionnalités IA — requiert HA ≥ 2025.8 et une intégration AI Task configurée (Ollama local, Anthropic, Google ou OpenAI).\n\n⚠️ L'entité AI Task ne doit pas avoir accès aux services HA (permissions minimales) pour éviter qu'une injection de prompt ne déclenche des actions.\n\n— Briefing matinal naturel rédigé par l'IA\n— Musique adaptative selon le contexte\n— Suggestion d'heure de réveil chaque soir\n— Bilan de sommeil hebdomadaire\n— Vérification du lever par caméra\n\nL'IA ne déclenche jamais la sonnerie. Fallback automatique si indisponible.",
         "data": {
           "ai_briefing": "Briefing matinal généré par IA (météo + agenda + trajet)",
           "ai_task_entity": "Entité AI Task (préférée)",
@@ -106,7 +106,8 @@
     "error": {
       "media_required": "Sélectionnez un lecteur de musique si la musique est activée",
       "light_required": "Sélectionnez une lumière si la lumière progressive est activée",
-      "jours_perso_required": "Sélectionnez au moins un jour si mode Personnalisé"
+      "jours_perso_required": "Sélectionnez au moins un jour si mode Personnalisé",
+      "invalid_name": "Le nom doit contenir uniquement des lettres, chiffres, tirets ou tirets bas (1-30 caractères)"
     },
     "abort": {
       "already_configured": "Un réveil avec ce nom existe déjà"

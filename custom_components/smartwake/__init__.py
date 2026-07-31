@@ -30,14 +30,16 @@ SERVICE_SCHEMA = vol.Schema({vol.Required(ATTR_ENTITY_ID): vol.All(cv.ensure_lis
 
 
 def _get_coordinator(hass: HomeAssistant, entity_id: str) -> ReveilCoordinator | None:
-    """Trouve le coordinator à partir d'une entity_id switch du réveil."""
-    for coord in hass.data.get(DOMAIN, {}).values():
-        if entity_id.startswith(f"switch.reveil_") and coord.entry.entry_id in entity_id:
-            return coord
-    for coord in hass.data.get(DOMAIN, {}).values():
-        if coord.entry.entry_id in entity_id:
-            return coord
-    return None
+    """Trouve le coordinator à partir d'une entity_id (match strict).
+
+    Cherche le coordinator dont l'entity_id du switch correspond exactement.
+    Évite les collisions de sous-chaîne entre réveils aux noms similaires.
+    """
+    registry = hass.helpers.entity_registry.async_get(hass)
+    entry = registry.async_get(entity_id)
+    if entry is None:
+        return None
+    return hass.data.get(DOMAIN, {}).get(entry.config_entry_id)
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:

@@ -248,8 +248,12 @@ class SmartWAKEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.FlowResult:
         """Étape 1 : Base."""
+        import re
         errors: dict[str, str] = {}
         if user_input is not None:
+            name = user_input.get(CONF_NAME, "")
+            if not re.match(r"^[A-Za-z0-9_-]{1,30}$", name):
+                errors[CONF_NAME] = "invalid_name"
             if user_input.get(CONF_JOURS) == "personnalise" and not user_input.get(CONF_JOURS_PERSO):
                 errors[CONF_JOURS_PERSO] = "jours_perso_required"
             if not errors:
