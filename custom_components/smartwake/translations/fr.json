@@ -6,11 +6,18 @@
         "title": "⏰ Créer un réveil",
         "description": "Donnez un nom, une heure, les jours actifs et choisissez un preset.\n\nVous pourrez tout ajuster ensuite via « Configurer ».\n\n**Presets :**\n- 🎵 **Simple** — musique + notification\n- 🌅 **Confort** — musique + lumière progressive + notification\n- 🏠 **Complet** — tout (chauffage, volets, IA, scène matin...)",
         "data": {
-          "name": "Nom du réveil (lettres, chiffres, - ou _)",
+          "name": "Nom du réveil (accents acceptés)",
           "heure": "Heure de réveil",
           "jours": "Jours actifs",
           "jours_perso": "Jours personnalisés (si mode Personnalisé)",
           "preset": "Preset de démarrage"
+        },
+        "data_description": {
+          "name": "Ex : Réveil semaine, Réveil sport. Les accents sont convertis automatiquement (Réveil → reveil).",
+          "heure": "L'heure à laquelle le réveil se déclenchera.",
+          "jours": "Choisissez un mode prédéfini ou « Personnalisé » pour sélectionner des jours spécifiques.",
+          "jours_perso": "Cochez les jours où le réveil doit sonner. Visible uniquement si Jours = Personnalisé.",
+          "preset": "Le preset prédéfinit les options. Tout est modifiable après via Configurer."
         }
       }
     },
@@ -32,19 +39,27 @@
       },
       "base": {
         "title": "Base",
-        "description": "Heure, jours, ponctuel, skip, vacances.",
+        "description": "Réglages de base du réveil : heure, jours, mode vacances.",
         "data": {
           "heure": "Heure de réveil",
           "jours": "Jours actifs",
-          "jours_perso": "Jours personnalisés (si mode Personnalisé)",
-          "ponctuel": "Réveil ponctuel",
-          "skip_prochain": "Sauter le prochain",
+          "jours_perso": "Jours personnalisés",
+          "ponctuel": "Réveil ponctuel (une seule fois)",
+          "skip_prochain": "Sauter le prochain réveil",
           "mode_vacances": "Mode vacances"
+        },
+        "data_description": {
+          "heure": "L'heure à laquelle le réveil se déclenchera (ex : 07:00).",
+          "jours": "Mode prédéfini (Tous, Semaine, Weekend) ou Personnalisé pour choisir des jours spécifiques.",
+          "jours_perso": "Cochez les jours. Visible uniquement si Jours = Personnalisé.",
+          "ponctuel": "Si activé, le réveil se désactive automatiquement après avoir sonné une fois.",
+          "skip_prochain": "Saute uniquement le prochain réveil, sans modifier la planification. Se remet à zéro après.",
+          "mode_vacances": "Suspend ce réveil indéfiniment. Désactivez pour reprendre."
         }
       },
       "musique": {
         "title": "🎵 Musique",
-        "description": "Source musicale et volume progressif.",
+        "description": "Source musicale et volume progressif. La musique démarre à l'heure du réveil avec un volume faible qui augmente progressivement.",
         "data": {
           "musique_activee": "Activer la musique",
           "media_player": "Lecteur de musique",
@@ -52,22 +67,37 @@
           "volume_initial": "Volume initial",
           "volume_final": "Volume final",
           "volume_duree": "Durée montée volume (min)"
+        },
+        "data_description": {
+          "musique_activee": "Active la musique au moment du réveil.",
+          "media_player": "Le lecteur qui jouera la musique (Sonos, Google Cast, Squeezebox...).",
+          "playlist": "ID de playlist Spotify (ex : FV:2/7) ou URL de radio (ex : https://icecast.radiofrance.fr/franceinter-midfi.mp3).",
+          "volume_initial": "Volume de départ, faible pour un réveil en douceur (ex : 0.05 = 5%).",
+          "volume_final": "Volume final atteint après la montée progressive (ex : 0.35 = 35%).",
+          "volume_duree": "Durée de la montée du volume, en minutes. Le volume augmente par paliers."
         }
       },
       "lumiere": {
         "title": "💡 Lumière & aube",
-        "description": "Simulation d'aube et éclairage progressif.",
+        "description": "Simulation d'aube : la luminosité augmente progressivement avant l'heure du réveil pour un réveil naturel.",
         "data": {
           "lumiere_activee": "Activer la lumière progressive",
           "lumiere": "Lumière",
           "brightness_max": "Luminosité max (1-255)",
           "duree_progressive": "Durée éclairage (min)",
           "aube_min": "Aube avant l'heure H (min)"
+        },
+        "data_description": {
+          "lumiere_activee": "Active la simulation d'aube — la lumière augmente progressivement.",
+          "lumiere": "La lampe de chambre qui servira pour l'aube progressive.",
+          "brightness_max": "Luminosité maximale atteinte (1-255, 255 = 100%).",
+          "duree_progressive": "Durée totale de l'augmentation de luminosité, en minutes.",
+          "aube_min": "L'aube démarre X minutes avant l'heure du réveil (ex : 20 = l'aube commence à H-20min)."
         }
       },
       "confort": {
         "title": "🏠 Confort",
-        "description": "Préparation de la maison avant le réveil.",
+        "description": "La maison se prépare avant votre réveil : chauffage, eau chaude, café, volets.",
         "data": {
           "prechauffe_min": "Pré-chauffage avant (min)",
           "radiateur": "Radiateur / thermostat",
@@ -76,18 +106,28 @@
           "cafetiere_min": "Café avant (min)",
           "volets": "Volets à ouvrir",
           "volets_soleil": "Ouvrir volets seulement si soleil levé",
-          "scenes_matin": "Activer la scène matin (autres pièces)"
+          "scenes_matin": "Activer la scène matin"
+        },
+        "data_description": {
+          "prechauffe_min": "Le radiateur passe en mode confort X minutes avant l'heure du réveil (ex : 45 = pré-chauffe à H-45min).",
+          "radiateur": "L'entité climate (thermostat/radiateur) qui sera mise en mode confort.",
+          "chauffe_eau": "Prise connectée du chauffe-eau ou sèche-serviettes, allumée avant le réveil.",
+          "cafetiere": "Prise connectée de la cafetière/bouilloire, allumée X minutes avant le réveil.",
+          "cafetiere_min": "La cafetière s'allume X minutes avant l'heure du réveil.",
+          "volets": "Le volet/cover à ouvrir au réveil. Laisse vide pour ne pas ouvrir.",
+          "volets_soleil": "Si activé, les volets ne s'ouvrent que si le soleil est levé (sun.sun above_horizon). Sinon, ouverture au lever du soleil.",
+          "scenes_matin": "Active l'éclairage des autres pièces (couloir, cuisine) au réveil."
         }
       },
       "intelligence": {
         "title": "🧠 Intelligence",
-        "description": "Présence, jours fériés, sommeil, escalade intelligente.",
+        "description": "Conditions intelligentes : ne sonne pas si absent, ignore les fériés, détecte le lever, escalade progressive.",
         "data": {
           "presence": "Présence (person)",
           "workday_sensor": "Capteur jours fériés",
           "ignorer_feries": "Ignorer les jours fériés",
           "vacances_scolaires_calendar": "Calendrier vacances scolaires",
-          "ignorer_vacances_scolaire": "Ignorer pendant les vacances scolaires",
+          "ignorer_vacances_scolaire": "Ignorer pendant vacances scolaires",
           "withings_bed_1": "Capteur de lit 1 (Withings)",
           "withings_bed_2": "Capteur de lit 2 (Withings)",
           "mouvement_sdb": "Capteur mouvement SdB",
@@ -95,11 +135,25 @@
           "lever_anticippe": "Annuler si lever anticipé",
           "mouvement_cuisine": "Capteur mouvement cuisine",
           "escalade_intelligente": "Escalade progressive (3 niveaux)"
+        },
+        "data_description": {
+          "presence": "Le réveil NE sonnera PAS si cette personne n'est pas à la maison. Laisse vide pour toujours sonner.",
+          "workday_sensor": "Capteur binary_sensor de l'intégration Workday (jours fériés officiels français).",
+          "ignorer_feries": "Si activé, le réveil est désactivé les jours fériés (via le capteur workday ci-dessus).",
+          "vacances_scolaires_calendar": "Calendrier des vacances scolaires (intégration Calendar avec flux ICS de l'Éducation nationale).",
+          "ignorer_vacances_scolaire": "Si activé, le réveil est désactivé pendant les vacances scolaires (via le calendrier ci-dessus).",
+          "withings_bed_1": "Capteur de présence au lit (Withings Sleep). Le réveil ne sonne pas si personne n'est au lit.",
+          "withings_bed_2": "Capteur de lit pour une 2e personne (avec un 2e Withings).",
+          "mouvement_sdb": "Capteur de mouvement dans la salle de bain. Sert pour l'arrêt automatique.",
+          "mouvement_stop": "Si activé, le réveil s'arrête automatiquement quand un mouvement est détecté dans la salle de bain (= vous êtes levé).",
+          "lever_anticippe": "Si activé et que vous êtes déjà levé (mouvement cuisine détecté avant l'heure), le réveil s'annule.",
+          "mouvement_cuisine": "Capteur de mouvement dans la cuisine. Détecte un lever anticipé avant l'heure du réveil.",
+          "escalade_intelligente": "Si activé, l'escalade est progressive : 5 min (volume 60%), 10 min (80%), 15 min (100%). Au lieu de tout à 100% d'un coup."
         }
       },
       "notification": {
         "title": "📱 Notification",
-        "description": "Notification, TTS, snooze, escalade.",
+        "description": "Notification mobile avec boutons Snooze/Stop, briefing vocal TTS, et escalade si pas de réponse.",
         "data": {
           "notification_activee": "Activer la notification",
           "notify_device": "Service notification mobile",
@@ -110,11 +164,22 @@
           "snooze_duree": "Snooze (min)",
           "snooze_max": "Max snooze",
           "escalade_min": "Escalade après (min)"
+        },
+        "data_description": {
+          "notification_activee": "Envoie une notification sur votre téléphone avec les boutons Snooze et Stop.",
+          "notify_device": "Le service de notification mobile (ex : notify.mobile_app_mon_telephone).",
+          "notif_titre": "Titre affiché dans la notification.",
+          "notif_message": "Message affiché dans la notification.",
+          "tts_activee": "Si activé, un briefing vocal est lu quand vous arrêtez le réveil (météo, agenda).",
+          "tts_entity": "L'entité TTS (media_player) qui parlera le briefing. Ex : tts.piper, media_player.enceinte.",
+          "snooze_duree": "Durée d'un snooze en minutes. La musique et la lumière reprennent après.",
+          "snooze_max": "Nombre maximum de snoozes avant que le réveil ne se bloque.",
+          "escalade_min": "Si vous n'avez pas appuyé sur Stop après X minutes, le réveil escalade (volume max + lumières 100%)."
         }
       },
       "ai": {
         "title": "🤖 AI Task",
-        "description": "Fonctionnalités IA (HA ≥ 2025.8 + AI Task). L'IA ne déclenche jamais la sonnerie.",
+        "description": "Fonctionnalités IA — requiert HA ≥ 2025.8 + AI Task configuré (Ollama local, Anthropic, Google ou OpenAI).\n\n⚠️ L'entité AI Task ne doit pas avoir accès aux services HA (permissions minimales).\n\nL'IA ne déclenche jamais la sonnerie. Fallback automatique si indisponible.",
         "data": {
           "ai_briefing": "Briefing matinal IA",
           "ai_task_entity": "Entité AI Task",
@@ -126,6 +191,18 @@
           "weather_entity": "Météo",
           "trajet_sensor": "Capteur trajet",
           "batterie_sensor": "Capteur batterie"
+        },
+        "data_description": {
+          "ai_briefing": "Si activé, l'IA rédige un briefing naturel (météo + agenda + trajet + batterie) au lieu d'un TTS robotique. Récupéré au moment du Stop.",
+          "ai_task_entity": "L'entité AI Task à utiliser (configurée dans Paramètres → Système → AI Task).",
+          "ai_musique_adapt": "Si activé, l'IA choisit la playlist selon la météo (pluie = doux, beau temps = énergique).",
+          "ai_suggestion_heure": "Si activé, chaque soir à 21:30 l'IA propose une heure de réveil optimale. Notification avec boutons Accepter/Refuser.",
+          "ai_bilan_hebdo": "Si activé, générez un bilan de sommeil hebdomadaire via le service smartwake.bilan_hebdo. L'IA synthétise la semaine + recommandations.",
+          "ai_verif_lever": "Si activé, 10 min après le Stop l'IA analyse une image de la chambre. Si vous êtes encore au lit → escalade.",
+          "ai_camera_verif": "La caméra de chambre utilisée pour la vérification du lever par IA.",
+          "weather_entity": "L'entité météo (ex : weather.home) utilisée par l'IA pour le briefing et le choix musical.",
+          "trajet_sensor": "Capteur de temps de trajet (ex : sensor.trajet_travail) utilisé dans le briefing IA.",
+          "batterie_sensor": "Capteur de batterie du téléphone (ex : sensor.mon_tel_battery_level) utilisé dans le briefing IA."
         }
       }
     }
