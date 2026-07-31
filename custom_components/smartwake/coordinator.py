@@ -50,6 +50,14 @@ from .const import (
     CONF_AI_BRIEFING,
     CONF_AI_MUSIQUE_ADAPT,
     CONF_AI_SUGGESTION_HEURE,
+    CONF_AI_SUGGESTION_HEURE_PLANIF,
+    CONF_AI_BILAN_JOUR,
+    CONF_AI_BILAN_HEURE_PLANIF,
+    CONF_AI_BILAN_HEBDO,
+    DEFAULT_AI_SUGGESTION_HEURE,
+    DEFAULT_AI_BILAN_HEURE,
+    DEFAULT_AI_BILAN_JOUR,
+    JOURS_LIST,
     CONF_AI_VERIF_LEVER,
     CONF_AI_CUSTOM_ENABLED,
     CONF_AI_CUSTOM_TASKS,
@@ -354,14 +362,68 @@ class ReveilCoordinator(DataUpdateCoordinator):
                 or cfg.get(CONF_AI_CUSTOM_ENABLED):
             self._setup_ai_suggestion()
 
+    @staticmethod
+    def _heure_minute(valeur: str | None, defaut: str) -> tuple[int, int]:
+        """Analyse une heure « HH:MM » avec repli sur la valeur par défaut."""
+        for candidat in (valeur, defaut):
+            if not candidat:
+                continue
+            try:
+                parts = str(candidat).split(":")
+                h, m = int(parts[0]), int(parts[1])
+                if 0 <= h < 24 and 0 <= m < 60:
+                    return h, m
+            except (ValueError, IndexError):
+                continue
+        return 21, 30
+
     def _setup_ai_suggestion(self) -> None:
-        """Planifie le traitement IA du soir, chaque jour à 21:30."""
-        unsub = async_track_time_change(
-            self.hass,
-            self._ai_suggestion_callback,
-            hour=21, minute=30, second=0,
+        """Planifie le traitement IA du soir, à l'heure configurée.
+
+        L'heure était figée à 21:30 dans le code. Le bilan hebdomadaire n'était
+        par ailleurs déclenchable que par appel de service : il est désormais
+        programmé au jour et à l'heure choisis.
+        """
+        cfg = self.entry.data
+
+        heure, minute = self._heure_minute(
+            cfg.get(CONF_AI_SUGGESTION_HEURE_PLANIF), DEFAULT_AI_SUGGESTION_HEURE
         )
-        self._unsub_listeners.append(unsub)
+        self._unsub_listeners.append(
+            async_track_time_change(
+                self.hass, self._ai_suggestion_callback,
+                hour=heure, minute=minute, second=0,
+            )
+        )
+        _LOGGER.debug(
+            "Traitement IA du soir planifié à %02d:%02d pour '%s'",
+            heure, minute, self.entry.title,
+        )
+
+        if cfg.get(CONF_AI_BILAN_HEBDO):
+            h_bilan, m_bilan = self._heure_minute(
+                cfg.get(CONF_AI_BILAN_HEURE_PLANIF), DEFAULT_AI_BILAN_HEURE
+            )
+            self._unsub_listeners.append(
+                async_track_time_change(
+                    self.hass, self._ai_bilan_callback,
+                    hour=h_bilan, minute=m_bilan, second=0,
+                )
+            )
+            _LOGGER.debug(
+                "Bilan hebdomadaire planifié le %s à %02d:%02d pour '%s'",
+                cfg.get(CONF_AI_BILAN_JOUR, DEFAULT_AI_BILAN_JOUR),
+                h_bilan, m_bilan, self.entry.title,
+            )
+
+    @callback
+    def _ai_bilan_callback(self, now: datetime) -> None:
+        """Déclenche le bilan hebdomadaire le jour choisi."""
+        jour = self.entry.data.get(CONF_AI_BILAN_JOUR, DEFAULT_AI_BILAN_JOUR)
+        attendu = JOURS_LIST.index(jour) if jour in JOURS_LIST else 6
+        if now.weekday() != attendu:
+            return
+        self.hass.async_create_task(self.bilan_hebdo_ia())
 
     @callback
     def _ai_suggestion_callback(self, now: datetime) -> None:

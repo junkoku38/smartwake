@@ -75,7 +75,8 @@ Chaque champ a une **description** expliquant ce qu'il fait et pourquoi.
 ### AI Task (HA ≥ 2025.8, optionnel)
 - **Briefing matinal IA** : briefing naturel (météo, agenda, trajet, batterie)
 - **Musique adaptative** : l'IA choisit la playlist selon la météo
-- **Suggestion d'heure du soir** : notification Accepter/Refuser (l'IA propose, vous validez)
+- **Suggestion d'heure du soir** : notification Accepter/Refuser (l'IA propose,
+  vous validez). Heure de l'envoi configurable.
 - **Bilan de sommeil hebdomadaire** : synthèse + recommandations (service `smartwake.bilan_hebdo`).
   Désignez vos capteurs de sommeil dans *Options → AI Task → Capteurs de sommeil* :
   score, durées de sommeil profond/léger/paradoxal, réveils nocturnes,

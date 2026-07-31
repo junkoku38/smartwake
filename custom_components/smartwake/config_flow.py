@@ -19,6 +19,22 @@ from homeassistant.helpers import selector
 from .const import (
     CONF_AI_BILAN_HEBDO,
     CONF_SOMMEIL_SENSORS,
+    CONF_AI_SUGGESTION_HEURE_PLANIF,
+    CONF_AI_BILAN_JOUR,
+    CONF_AI_BILAN_HEURE_PLANIF,
+    CONF_AI_BRIEFING_SI_TRAVAIL,
+    CONF_MODE_TRAVAIL,
+    CONF_MODE_TRAVAIL_ENTITY,
+    CONF_MUSIQUE_STYLE_SOLEIL,
+    CONF_MUSIQUE_STYLE_NUAGEUX,
+    CONF_MUSIQUE_STYLE_PLUIE,
+    CONF_MUSIQUE_STYLE_NEIGE,
+    CONF_MUSIQUE_STYLE_TEMPETE,
+    DEFAULT_AI_SUGGESTION_HEURE,
+    DEFAULT_AI_BILAN_HEURE,
+    DEFAULT_AI_BILAN_JOUR,
+    MODE_TRAVAIL_INDETERMINE,
+    MODE_TRAVAIL_OPTIONS,
     CONF_AI_BRIEFING,
     CONF_AI_CUSTOM_ENABLED,
     CONF_AI_CUSTOM_PROMPT,
@@ -121,6 +137,10 @@ _LOGGER = logging.getLogger(__name__)
 
 def _entity(domain: str) -> selector.EntitySelector:
     return selector.EntitySelector(selector.EntitySelectorConfig(domain=[domain]))
+
+
+def _entity_multi_domaines(domaines: list[str]) -> selector.EntitySelector:
+    return selector.EntitySelector(selector.EntitySelectorConfig(domain=domaines))
 
 
 def _num(minv, maxv, step=1, unit=None) -> selector.NumberSelector:
@@ -476,6 +496,11 @@ class SmartWAKEOptionsFlow(config_entries.OptionsFlow):
         schema = vol.Schema({
                 vol.Required(CONF_MUSIQUE_ACTIVEE, default=data.get(CONF_MUSIQUE_ACTIVEE, True)): bool,
                 vol.Optional(CONF_MEDIA_PLAYER): _entity("media_player"),
+                vol.Optional(CONF_MUSIQUE_STYLE_SOLEIL): selector.TextSelector(),
+                vol.Optional(CONF_MUSIQUE_STYLE_NUAGEUX): selector.TextSelector(),
+                vol.Optional(CONF_MUSIQUE_STYLE_PLUIE): selector.TextSelector(),
+                vol.Optional(CONF_MUSIQUE_STYLE_NEIGE): selector.TextSelector(),
+                vol.Optional(CONF_MUSIQUE_STYLE_TEMPETE): selector.TextSelector(),
                 vol.Optional(CONF_PLAYLIST, default=data.get(CONF_PLAYLIST)): selector.MediaSelector(),
                 vol.Optional(CONF_VOLUME_INITIAL, default=data.get(CONF_VOLUME_INITIAL, DEFAULT_VOLUME_INITIAL)): _num(0.01, 1, 0.01),
                 vol.Optional(CONF_VOLUME_FINAL, default=data.get(CONF_VOLUME_FINAL, DEFAULT_VOLUME_FINAL)): _num(0.01, 1, 0.01),
@@ -534,6 +559,16 @@ class SmartWAKEOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional(CONF_IGNORER_FERIES, default=data.get(CONF_IGNORER_FERIES, True)): bool,
                 vol.Optional(CONF_VACANCES_SCOLAIRES_CALENDAR): _entity("calendar"),
                 vol.Optional(CONF_IGNORER_VACANCES_SCOLAIRE, default=data.get(CONF_IGNORER_VACANCES_SCOLAIRE, False)): bool,
+                vol.Required(CONF_MODE_TRAVAIL, default=data.get(CONF_MODE_TRAVAIL, MODE_TRAVAIL_INDETERMINE)): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[selector.SelectOptionDict(value=k, label=v)
+                                 for k, v in MODE_TRAVAIL_OPTIONS.items()],
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Optional(CONF_MODE_TRAVAIL_ENTITY): _entity_multi_domaines(
+                    ["input_select", "sensor", "binary_sensor", "calendar"]
+                ),
                 vol.Optional(CONF_PRESENCE_LIT_SENSORS, default=data.get(CONF_PRESENCE_LIT_SENSORS, [])): selector.EntitySelector(
                     selector.EntitySelectorConfig(
                         domain=["binary_sensor", "sensor", "input_boolean"], multiple=True
@@ -578,10 +613,20 @@ class SmartWAKEOptionsFlow(config_entries.OptionsFlow):
         data = self._data
         schema = vol.Schema({
                 vol.Optional(CONF_AI_BRIEFING, default=data.get(CONF_AI_BRIEFING, False)): bool,
+                vol.Optional(CONF_AI_BRIEFING_SI_TRAVAIL, default=data.get(CONF_AI_BRIEFING_SI_TRAVAIL, False)): bool,
                 vol.Optional(CONF_AI_TASK_ENTITY): _entity("ai_task"),
                 vol.Optional(CONF_AI_MUSIQUE_ADAPT, default=data.get(CONF_AI_MUSIQUE_ADAPT, False)): bool,
                 vol.Optional(CONF_AI_SUGGESTION_HEURE, default=data.get(CONF_AI_SUGGESTION_HEURE, False)): bool,
+                vol.Optional(CONF_AI_SUGGESTION_HEURE_PLANIF, default=data.get(CONF_AI_SUGGESTION_HEURE_PLANIF, DEFAULT_AI_SUGGESTION_HEURE)): selector.TimeSelector(),
                 vol.Optional(CONF_AI_BILAN_HEBDO, default=data.get(CONF_AI_BILAN_HEBDO, False)): bool,
+                vol.Optional(CONF_AI_BILAN_JOUR, default=data.get(CONF_AI_BILAN_JOUR, DEFAULT_AI_BILAN_JOUR)): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[selector.SelectOptionDict(value=j, label=j.capitalize())
+                                 for j in JOURS_LIST],
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Optional(CONF_AI_BILAN_HEURE_PLANIF, default=data.get(CONF_AI_BILAN_HEURE_PLANIF, DEFAULT_AI_BILAN_HEURE)): selector.TimeSelector(),
                 vol.Optional(CONF_SOMMEIL_SENSORS, default=data.get(CONF_SOMMEIL_SENSORS, [])): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain=["sensor", "binary_sensor"], multiple=True)
                 ),

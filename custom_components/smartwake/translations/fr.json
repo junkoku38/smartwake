@@ -87,7 +87,12 @@
           "playlist": "Source musicale (playlist / radio / favoris)",
           "volume_initial": "Volume initial",
           "volume_final": "Volume final",
-          "volume_duree": "Durée montée volume (min)"
+          "volume_duree": "Durée montée volume (min)",
+          "musique_style_soleil": "Style musical — grand soleil",
+          "musique_style_nuageux": "Style musical — ciel couvert ou brouillard",
+          "musique_style_pluie": "Style musical — pluie ou averses",
+          "musique_style_neige": "Style musical — neige",
+          "musique_style_tempete": "Style musical — orage ou vent fort"
         },
         "data_description": {
           "musique_activee": "Active la musique au moment du réveil.",
@@ -95,7 +100,8 @@
           "playlist": "Naviguez dans le Media Browser de HA pour choisir une playlist Spotify, une radio, un favoris ou un fichier local. Le sélecteur affiche le contenu disponible sur votre media player.",
           "volume_initial": "Volume de départ, faible pour un réveil en douceur (ex : 0.05 = 5%).",
           "volume_final": "Volume final atteint après la montée progressive (ex : 0.35 = 35%).",
-          "volume_duree": "Durée de la montée du volume, en minutes. Le volume augmente par paliers."
+          "volume_duree": "Durée de la montée du volume, en minutes. Le volume augmente par paliers.",
+          "musique_style_soleil": "Style ou ambiance souhaitée, en toutes lettres : « énergique, pop » par exemple. Laissez vide pour laisser l'IA décider seule."
         }
       },
       "lumiere": {
@@ -156,7 +162,9 @@
           "lever_anticippe": "Annuler si lever anticipé",
           "mouvement_cuisine": "Capteur mouvement cuisine",
           "escalade_intelligente": "Escalade progressive (3 niveaux)",
-          "presence_lit_sensors": "Capteurs de présence au lit"
+          "presence_lit_sensors": "Capteurs de présence au lit",
+          "mode_travail": "Mode de travail habituel",
+          "mode_travail_entity": "Entité indiquant le mode de travail"
         },
         "data_description": {
           "presence": "Le réveil NE sonnera PAS si cette personne n'est pas à la maison. Laisse vide pour toujours sonner.",
@@ -169,7 +177,9 @@
           "lever_anticippe": "Si activé et que vous êtes déjà levé (mouvement cuisine détecté avant l'heure), le réveil s'annule.",
           "mouvement_cuisine": "Capteur de mouvement dans la cuisine. Détecte un lever anticipé avant l'heure du réveil.",
           "escalade_intelligente": "Si activé, l'escalade est progressive : 5 min (volume 60%), 10 min (80%), 15 min (100%). Au lieu de tout à 100% d'un coup.",
-          "presence_lit_sensors": "Capteurs indiquant qu'une personne est couchée : tapis ou capteur sous matelas (Withings Sleep…), radar millimétrique, capteur de pression. Le réveil ne sonne pas si personne n'est au lit, et sert aussi à vérifier le lever."
+          "presence_lit_sensors": "Capteurs indiquant qu'une personne est couchée : tapis ou capteur sous matelas (Withings Sleep…), radar millimétrique, capteur de pression. Le réveil ne sonne pas si personne n'est au lit, et sert aussi à vérifier le lever.",
+          "mode_travail": "Sert aux tâches IA : en télétravail, le trajet et la météo n'influencent ni le briefing ni l'heure suggérée.",
+          "mode_travail_entity": "Pour un rythme alterné. Une entité renseignée prime sur le mode fixe ci-dessus. Tout état contenant « télétravail », « remote » ou « maison » est compris comme du télétravail ; « présentiel », « bureau » ou « site » comme du présentiel."
         }
       },
       "notification": {
@@ -218,7 +228,11 @@
           "ai_custom_prompt": "Votre prompt personnalisé",
           "ai_custom_trigger": "Quand exécuter cette task",
           "ai_custom_entities": "Entités à inclure dans le contexte",
-          "sommeil_sensors": "Capteurs de sommeil"
+          "sommeil_sensors": "Capteurs de sommeil",
+          "ai_briefing_si_travail": "Briefing uniquement les jours travaillés",
+          "ai_suggestion_heure_planif": "Heure de la suggestion du soir",
+          "ai_bilan_jour": "Jour du bilan hebdomadaire",
+          "ai_bilan_heure_planif": "Heure du bilan hebdomadaire"
         },
         "data_description": {
           "ai_briefing": "**Recommandé** — Au moment du Stop, l'IA rédige un briefing naturel (météo, premier RDV de l'agenda, temps de trajet, batterie du téléphone) et le lit via TTS. Cochez + sélectionnez l'entité AI Task ci-dessous.\n\n**Prompt utilisé :** « Tu es un assistant matinal. Rédige un briefing parlé de 30 secondes max, en français, ton chaleureux, sans listes ni emojis. Mentionne un conseil pertinent (parapluie, partir plus tôt si trafic, charger le téléphone si <30%). Termine par une phrase motivante courte. »",
@@ -234,7 +248,9 @@
           "ai_custom_prompt": "Tapez votre prompt ici. Ex : « Analyse la qualité de l'air dans la chambre et donne un conseil pour la journée. » Les valeurs des entités sélectionnées ci-dessous sont ajoutées automatiquement au contexte.",
           "ai_custom_trigger": "Quand exécuter votre task : au déclenchement du réveil, au Stop (quand vous vous levez), ou le soir à 21:30.",
           "ai_custom_entities": "Sélectionnez les entités dont les valeurs doivent être incluses dans le contexte de votre prompt. Ex : sensor.co2_chambre, sensor.qualite_air, weather.home.",
-          "sommeil_sensors": "Capteurs à transmettre au bilan hebdomadaire : score de sommeil, durées de sommeil profond/léger/paradoxal, réveils nocturnes, endormissement, ronflement… Compatible Withings, Fitbit, Oura ou tout autre capteur. Les moyennes sur 7 jours sont calculées automatiquement."
+          "sommeil_sensors": "Capteurs à transmettre au bilan hebdomadaire : score de sommeil, durées de sommeil profond/léger/paradoxal, réveils nocturnes, endormissement, ronflement… Compatible Withings, Fitbit, Oura ou tout autre capteur. Les moyennes sur 7 jours sont calculées automatiquement.",
+          "ai_briefing_si_travail": "Utilise le capteur de jours travaillés configuré dans la section Intelligence.",
+          "ai_bilan_jour": "Le bilan portait uniquement sur un appel manuel du service smartwake.bilan_hebdo ; il est désormais planifié."
         }
       }
     }

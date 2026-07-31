@@ -1717,3 +1717,146 @@ def test_presets_sans_entite_codee_en_dur():
         fautifs = {k: v for k, v in preset.items()
                    if isinstance(v, str) and "." in v and " " not in v}
         assert not fautifs, f"preset '{nom}' contient des entités : {fautifs}"
+
+
+# ── Mode de travail et planification des tâches IA ─────────────
+
+@pytest.mark.asyncio
+async def test_contexte_travail_entite_prime_sur_valeur_fixe(coordinator):
+    """Une entité renseignée doit l'emporter, pour les rythmes alternés."""
+    from custom_components.smartwake.ai import contexte_travail
+
+    hass = coordinator.hass
+    hass.states.set("binary_sensor.workday", "on")
+    hass.states.set("input_select.travail", "Télétravail")
+
+    ctx = contexte_travail(hass, {
+        "workday_sensor": "binary_sensor.workday",
+        "mode_travail": "presentiel",
+        "mode_travail_entity": "input_select.travail",
+    })
+    assert ctx["teletravail"] is True
+    assert ctx["jour_travaille"] is True
+
+
+@pytest.mark.asyncio
+async def test_contexte_travail_reconnait_les_libelles_libres(coordinator):
+    """Les input_select sont rédigés librement par l'utilisateur."""
+    from custom_components.smartwake.ai import contexte_travail
+
+    hass = coordinator.hass
+    for valeur, attendu_tele in (
+        ("Remote", True), ("À la maison", True), ("Au bureau", False),
+        ("Présentiel", False), ("Sur site", False),
+    ):
+        hass.states.set("input_select.t", valeur)
+        ctx = contexte_travail(hass, {"mode_travail_entity": "input_select.t"})
+        assert ctx["teletravail"] is attendu_tele, f"{valeur} mal interprété"
+
+
+@pytest.mark.asyncio
+async def test_briefing_omis_les_jours_non_travailles(coordinator):
+    """Le briefing agenda et trajet n'a pas d'objet un jour chômé."""
+    from custom_components.smartwake import ai
+
+    coordinator.hass.states.set("binary_sensor.workday", "off")
+    cfg = {
+        "ai_briefing": True,
+        "ai_briefing_si_travail": True,
+        "workday_sensor": "binary_sensor.workday",
+    }
+    appel = AsyncMock(return_value={"data": "briefing"})
+    with patch.object(ai, "_call_ai_task", appel):
+        resultat = await ai.generate_briefing(coordinator.hass, cfg, "Reveil")
+
+    assert resultat is None
+    # Sans cette vérification, le test passerait aussi parce que l'appel IA
+    # échoue de lui-même en l'absence de service ai_task.
+    assert not appel.called, "aucun appel à l'IA ne doit être émis"
+
+    # Et le briefing doit bien être produit un jour travaillé
+    coordinator.hass.states.set("binary_sensor.workday", "on")
+    with patch.object(ai, "_call_ai_task", appel):
+        assert await ai.generate_briefing(coordinator.hass, cfg, "Reveil") == "briefing"
+    assert appel.called
+
+
+@pytest.mark.asyncio
+async def test_briefing_teletravail_sans_trajet(coordinator):
+    """En télétravail, le temps de trajet ne doit pas être transmis."""
+    from custom_components.smartwake import ai
+
+    hass = coordinator.hass
+    hass.states.set("input_select.t", "teletravail")
+    hass.states.set("sensor.trajet", "35")
+    captures = {}
+
+    async def _faux(h, nom, instructions, *a, **kw):
+        captures["i"] = instructions
+        return {"data": "ok"}
+
+    with patch.object(ai, "_call_ai_task", _faux):
+        await ai.generate_briefing(hass, {
+            "ai_briefing": True,
+            "mode_travail_entity": "input_select.t",
+            "trajet_sensor": "sensor.trajet",
+        }, "Reveil")
+
+    assert "35 min" not in captures["i"], "le trajet ne doit pas être transmis"
+    assert "sans objet" in captures["i"]
+    assert "télétravail" in captures["i"]
+
+
+def test_style_musical_par_famille_meteo():
+    """Chaque famille météo doit retrouver le style configuré."""
+    from custom_components.smartwake.ai import style_musical_meteo
+
+    cfg = {
+        "musique_style_soleil": "pop énergique",
+        "musique_style_pluie": "jazz doux",
+    }
+    assert style_musical_meteo(cfg, "sunny") == "pop énergique"
+    assert style_musical_meteo(cfg, "pouring") == "jazz doux"
+    assert style_musical_meteo(cfg, "lightning-rainy") == "jazz doux"
+    assert style_musical_meteo(cfg, "snowy") == ""  # non configuré
+
+
+@pytest.mark.asyncio
+async def test_style_musical_transmis_a_l_ia(coordinator):
+    """Le style configuré doit primer sur la règle générique du prompt."""
+    from custom_components.smartwake import ai
+
+    coordinator.hass.states.set("weather.home", "rainy")
+    captures = {}
+
+    async def _faux(h, nom, instructions, *a, **kw):
+        captures["i"] = instructions
+        return {"data": {"source": "x"}}
+
+    with patch.object(ai, "_call_ai_task", _faux):
+        await ai.choose_adaptive_music(coordinator.hass, {
+            "ai_musique_adapt": True,
+            "weather_entity": "weather.home",
+            "musique_style_pluie": "jazz doux, piano",
+        }, ["a", "b"])
+
+    assert "jazz doux, piano" in captures["i"]
+    assert "Beau temps = choix énergique" not in captures["i"]
+
+
+def test_heure_planifiee_configurable():
+    """Régression : l'heure de la suggestion du soir était figée à 21:30 dans
+    le code, et le bilan hebdomadaire n'était déclenchable que par service."""
+    src = open("custom_components/smartwake/coordinator.py", encoding="utf-8").read()
+    assert "hour=21, minute=30" not in src, "heure encore codée en dur"
+    assert "_ai_bilan_callback" in src, "le bilan doit être planifié"
+
+
+@pytest.mark.asyncio
+async def test_analyse_heure_planifiee(coordinator):
+    """Une heure invalide ne doit pas empêcher la planification."""
+    assert coordinator._heure_minute("07:45", "21:30") == (7, 45)
+    assert coordinator._heure_minute(None, "21:30") == (21, 30)
+    assert coordinator._heure_minute("", "20:00") == (20, 0)
+    assert coordinator._heure_minute("nawak", "20:00") == (20, 0)
+    assert coordinator._heure_minute("99:99", "20:00") == (20, 0)

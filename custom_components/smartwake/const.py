@@ -26,7 +26,7 @@ DOMAIN = "smartwake"
 
 # Version du schéma des config entries. Partagée entre le config flow et
 # async_migrate_entry pour qu'elles ne puissent pas divergerne.
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 
 def slugify(title: str) -> str:
@@ -138,6 +138,31 @@ CONF_AI_BILAN_HEBDO = "ai_bilan_hebdo"
 # Oura, Google Fit…). Le bilan ne recevait auparavant que le compteur de
 # snoozes : il commentait donc le réveil sans voir aucune mesure de sommeil.
 CONF_SOMMEIL_SENSORS = "sommeil_sensors"
+
+# Planification des tâches IA — l'heure de la suggestion du soir était figée à
+# 21:30 dans le code, et le bilan hebdomadaire n'était déclenchable que par
+# appel de service.
+CONF_AI_SUGGESTION_HEURE_PLANIF = "ai_suggestion_heure_planif"
+CONF_AI_BILAN_JOUR = "ai_bilan_jour"
+CONF_AI_BILAN_HEURE_PLANIF = "ai_bilan_heure_planif"
+DEFAULT_AI_SUGGESTION_HEURE = "21:30"
+DEFAULT_AI_BILAN_HEURE = "20:00"
+DEFAULT_AI_BILAN_JOUR = "dimanche"
+
+# Mode de travail. Deux façons de le renseigner : une valeur fixe, ou une entité
+# (input_select, capteur, calendrier) pour un mode qui change d'un jour à l'autre.
+CONF_MODE_TRAVAIL = "mode_travail"
+CONF_MODE_TRAVAIL_ENTITY = "mode_travail_entity"
+
+# N'énoncer le briefing que les jours travaillés, d'après le capteur workday
+CONF_AI_BRIEFING_SI_TRAVAIL = "ai_briefing_si_travail"
+
+# Styles musicaux selon la météo, transmis à l'IA de choix de musique
+CONF_MUSIQUE_STYLE_SOLEIL = "musique_style_soleil"
+CONF_MUSIQUE_STYLE_NUAGEUX = "musique_style_nuageux"
+CONF_MUSIQUE_STYLE_PLUIE = "musique_style_pluie"
+CONF_MUSIQUE_STYLE_NEIGE = "musique_style_neige"
+CONF_MUSIQUE_STYLE_TEMPETE = "musique_style_tempete"
 CONF_AI_VERIF_LEVER = "ai_verif_lever"
 CONF_AI_CAMERA_VERIF = "ai_camera_verif"
 CONF_AI_CUSTOM_ENABLED = "ai_custom_enabled"
@@ -227,3 +252,43 @@ SERVICE_STOP = "stop"
 SERVICE_SKIP = "sauter_prochain"
 SERVICE_RESET = "reset"
 SERVICE_BILAN_HEBDO = "bilan_hebdo"
+
+# ── Modes de travail ────────────────────────────────────────────
+
+MODE_TRAVAIL_PRESENTIEL = "presentiel"
+MODE_TRAVAIL_TELETRAVAIL = "teletravail"
+MODE_TRAVAIL_INDETERMINE = "indetermine"
+
+MODE_TRAVAIL_OPTIONS = {
+    MODE_TRAVAIL_INDETERMINE: "Non précisé",
+    MODE_TRAVAIL_PRESENTIEL: "Présentiel (trajet à prévoir)",
+    MODE_TRAVAIL_TELETRAVAIL: "Télétravail (pas de trajet)",
+}
+
+# Reconnaissance du mode depuis l'état d'une entité, pour accepter les
+# input_select rédigés librement par l'utilisateur.
+MOTS_TELETRAVAIL = ("teletravail", "télétravail", "remote", "home", "maison", "distance")
+MOTS_PRESENTIEL = ("presentiel", "présentiel", "bureau", "office", "site", "onsite")
+
+# ── Regroupement des conditions météo ───────────────────────────
+# Les états publiés par les intégrations météo de Home Assistant sont nombreux ;
+# on les ramène à cinq familles pour rester configurable sans 15 champs.
+
+METEO_FAMILLES = {
+    "soleil": ("sunny", "clear-night", "clear"),
+    "nuageux": ("partlycloudy", "cloudy", "fog"),
+    "pluie": ("rainy", "pouring", "lightning-rainy", "snowy-rainy", "hail"),
+    "neige": ("snowy",),
+    "tempete": ("lightning", "windy", "windy-variant", "exceptional"),
+}
+
+
+def famille_meteo(etat: str | None) -> str:
+    """Famille météo correspondant à un état d'entité weather."""
+    if not etat:
+        return "nuageux"
+    etat = etat.lower()
+    for famille, valeurs in METEO_FAMILLES.items():
+        if etat in valeurs:
+            return famille
+    return "nuageux"
