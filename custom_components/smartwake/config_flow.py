@@ -471,6 +471,14 @@ class SmartWAKEOptionsFlow(config_entries.OptionsFlow):
                 ),
         })
         if user_input is not None:
+            # Même contrôle qu'à la création : « personnalisé » sans jour coché
+            # désactive le réveil sans le dire.
+            if user_input.get(CONF_JOURS) == "personnalise" and not user_input.get(CONF_JOURS_PERSO):
+                return self.async_show_form(
+                    step_id="base",
+                    data_schema=self.add_suggested_values_to_schema(schema, user_input),
+                    errors={CONF_JOURS_PERSO: "jours_perso_required"},
+                )
             self._enregistrer(user_input, schema)
             return await self.async_step_init()
         return self._formulaire("base", schema)

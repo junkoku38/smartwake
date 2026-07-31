@@ -10,7 +10,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import CONF_JOURS, CONF_MODE_HEURE, DOMAIN, JOURS_OPTIONS
+from homeassistant.exceptions import HomeAssistantError
+
+from .const import CONF_JOURS, CONF_JOURS_PERSO, CONF_MODE_HEURE, DOMAIN, JOURS_OPTIONS
 from .coordinator import ReveilCoordinator
 from .entity import make_device_info
 
@@ -61,8 +63,18 @@ class ReveilSelect(SelectEntity):
         return self.coordinator.config.get(CONF_JOURS, "semaine")
 
     async def async_select_option(self, option: str) -> None:
-        if option in JOURS_OPTIONS:
-            await self.coordinator.set_jours(option)
+        if option not in JOURS_OPTIONS:
+            return
+        # « Personnalisé » suppose une liste de jours, que seul le menu
+        # d'options permet de saisir. L'accepter sans cette liste désactivait
+        # silencieusement le réveil : plus aucun jour actif, donc plus de
+        # prochain déclenchement.
+        if option == "personnalise" and not self.coordinator.config.get(CONF_JOURS_PERSO):
+            raise HomeAssistantError(
+                "Choisissez d'abord les jours dans Options → Base → Jours "
+                "personnalisés : sans eux, le réveil ne sonnerait aucun jour."
+            )
+        await self.coordinator.set_jours(option)
 
     async def async_added_to_hass(self) -> None:
         self.async_on_remove(self.coordinator.async_add_listener(self._handle_update))

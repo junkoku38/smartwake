@@ -151,9 +151,20 @@ def test_parse_heure_minuit():
 
 
 def test_parse_heure_invalide():
+    """Régression : une heure malformée levait une exception qui remontait
+    jusqu'au rafraîchissement du coordinator, rendant toutes les entités
+    indisponibles. Un repli silencieux est préférable à un réveil hors service.
+    """
+    from datetime import time as _t
+
     from custom_components.smartwake.coordinator import _parse_heure
-    with pytest.raises((ValueError, IndexError)):
-        _parse_heure("25:70")
+
+    for invalide in ("25:70", "7h00", "", None, "abc", "12"):
+        assert _parse_heure(invalide) == _t(7, 0), f"repli manquant pour {invalide!r}"
+
+    # Les valeurs correctes restent interprétées
+    assert _parse_heure("06:45") == _t(6, 45)
+    assert _parse_heure("6:45") == _t(6, 45)
 
 
 # ── Tests coordinator ──────────────────────────────────────────
@@ -1976,3 +1987,71 @@ async def test_valeur_ecrite_par_les_options_visible_des_entites(coordinator):
 
     # Le coordinator lit entry.data : la valeur est immédiatement disponible
     assert coordinator.config["aube_min"] == 55
+
+
+# ── Régression : plus de prochain réveil ───────────────────────
+
+@pytest.mark.asyncio
+async def test_jours_personnalises_vides_signales(coordinator, caplog):
+    """Régression : « Prochain réveil » passait à inconnu sans explication.
+
+    Le mode « personnalisé » suppose une liste de jours. Sans elle, aucun jour
+    n'est actif : _calculer_prochain ne trouve aucune occurrence sur huit
+    jours, le capteur passe à inconnu et le réveil ne sonne plus jamais — sans
+    le moindre message.
+    """
+    import logging
+
+    coordinator.entry.data = {
+        **coordinator.entry.data, "jours": "personnalise", "jours_perso": [],
+    }
+    with caplog.at_level(logging.WARNING):
+        await coordinator.set_actif(True)
+
+    assert coordinator.prochain_reveil is None
+    assert "aucun jour actif" in caplog.text.lower(), (
+        "la cause doit apparaître dans les journaux"
+    )
+
+
+@pytest.mark.asyncio
+async def test_jours_personnalises_renseignes(coordinator):
+    """Avec des jours cochés, la planification reprend normalement."""
+    coordinator.entry.data = {
+        **coordinator.entry.data,
+        "jours": "personnalise",
+        "jours_perso": ["lundi", "mercredi", "vendredi"],
+    }
+    await coordinator.set_actif(True)
+    assert coordinator.prochain_reveil is not None
+    assert coordinator.prochain_reveil.weekday() in (0, 2, 4)
+
+
+@pytest.mark.asyncio
+async def test_select_refuse_personnalise_sans_jours(coordinator):
+    """Le sélecteur ne doit pas pouvoir désactiver le réveil en silence."""
+    _stub_number_module()
+    from homeassistant.exceptions import HomeAssistantError
+
+    from custom_components.smartwake.select import SELECT_DESC, ReveilSelect
+
+    ent = ReveilSelect(coordinator, coordinator.entry, SELECT_DESC)
+    coordinator.entry.data = {**coordinator.entry.data, "jours_perso": []}
+
+    with pytest.raises(HomeAssistantError):
+        await ent.async_select_option("personnalise")
+    assert coordinator.config["jours"] != "personnalise"
+
+    # Les autres modes restent acceptés
+    await ent.async_select_option("weekend")
+    assert coordinator.config["jours"] == "weekend"
+
+
+@pytest.mark.asyncio
+async def test_heure_invalide_ne_casse_pas_la_planification(coordinator):
+    """Régression : une heure malformée levait une exception qui remontait
+    jusqu'au rafraîchissement, laissant toutes les entités indisponibles."""
+    coordinator.entry.data = {**coordinator.entry.data, "heure": "7h00"}
+    await coordinator.set_actif(True)
+    assert coordinator.prochain_reveil is not None
+    assert coordinator.prochain_reveil.hour == 7

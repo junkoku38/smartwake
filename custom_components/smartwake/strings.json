@@ -253,6 +253,9 @@
           "ai_bilan_jour": "Le bilan portait uniquement sur un appel manuel du service smartwake.bilan_hebdo ; il est désormais planifié."
         }
       }
+    },
+    "error": {
+      "jours_perso_required": "Choisissez au moins un jour, sinon le réveil ne sonnera jamais."
     }
   }
 }

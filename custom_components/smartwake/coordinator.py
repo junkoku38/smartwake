@@ -152,10 +152,17 @@ def _jours_actifs(mode: str, jours_perso: list[str] | None = None) -> set[int]:
     return set(range(7))  # fallback pour mode inconnu
 
 
-def _parse_heure(heure_str: str) -> time:
-    """Convertit 'HH:MM' en objet time."""
-    parts = heure_str.split(":")
-    return time(hour=int(parts[0]), minute=int(parts[1]))
+def _parse_heure(heure_str: str, defaut: str = "07:00") -> time:
+    """Analyse « HH:MM ». Une valeur invalide ne doit pas interrompre le calcul
+    du prochain réveil : l'exception remontait jusqu'au rafraîchissement du
+    coordinator, laissant toutes les entités indisponibles."""
+    for candidat in (heure_str, defaut):
+        try:
+            parts = str(candidat).split(":")
+            return time(hour=int(parts[0]), minute=int(parts[1]))
+        except (ValueError, IndexError, TypeError):
+            continue
+    return time(hour=7, minute=0)
 
 
 class ReveilCoordinator(DataUpdateCoordinator):
@@ -821,6 +828,16 @@ class ReveilCoordinator(DataUpdateCoordinator):
                 self._statut = STATUT_IDLE if self._actif else STATUT_INACTIF
             return
 
+        # Aucune occurrence trouvée sur huit jours. Le cas le plus courant est
+        # le mode « personnalisé » sans jour coché : le réveil est alors
+        # silencieusement désactivé et le capteur « Prochain réveil » passe à
+        # inconnu, sans que rien n'explique pourquoi.
+        if not jours:
+            _LOGGER.warning(
+                "Réveil '%s' : aucun jour actif (mode « %s »). Le réveil ne "
+                "sonnera pas tant qu'aucun jour n'est sélectionné.",
+                self.entry.title, mode_jours,
+            )
         self._prochain = None
         if self._statut not in (STATUT_RINGING, STATUT_SNOOZED, STATUT_PREWAKE):
             self._statut = STATUT_INACTIF
