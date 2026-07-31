@@ -56,8 +56,6 @@ from .const import (
     CONF_ADAPTATIF_AGENDA,
     CONF_AGENDA_ENTITY,
     CONF_AGENDA_MARGE_MIN,
-    CONF_SOMMEIL_PHASE,
-    CONF_SOMMEIL_FENETRE_MIN,
     CONF_JOURS,
     CONF_JOURS_PERSO,
     CONF_LEVER_ANTICIPE,
@@ -112,7 +110,6 @@ from .const import (
     DEFAULT_SNOOZE_DUREE,
     DEFAULT_SNOOZE_MAX,
     DEFAULT_AGENDA_MARGE_MIN,
-    DEFAULT_SOMMEIL_FENETRE_MIN,
     DEFAULT_VOLUME_DUREE,
     DEFAULT_VOLUME_FINAL,
     DEFAULT_VOLUME_INITIAL,
@@ -740,8 +737,6 @@ class ReveilCoordinator(DataUpdateCoordinator):
                 if ajuste is not None:
                     candidate = ajuste
 
-            if cfg.get(CONF_SOMMEIL_PHASE, False) and self._capteurs_lit():
-                candidate -= timedelta(minutes=self._avance_phase_sommeil(cfg))
             if candidate <= now:
                 continue
 
@@ -821,32 +816,11 @@ class ReveilCoordinator(DataUpdateCoordinator):
             _LOGGER.error("Erreur agenda adaptatif: %s", exc)
         return None
 
-    def _avance_phase_sommeil(self, cfg: dict) -> int:
-        """Minutes d'avance à appliquer selon la phase de sommeil Withings.
-
-        Renvoyait auparavant une heure recalculée sur la date du jour, ce qui
-        reportait le réveil de près de 24 h lorsque l'avance franchissait
-        minuit (00:10 avancé de 20 min donnait 23:50 le même jour).
-        """
-        capteurs = self._capteurs_lit()
-        if not capteurs:
-            return 0
-        state = self.hass.states.get(capteurs[0])
-        if state is None:
-            return 0
-        sleep_state = state.attributes.get("sleep_state", state.state)
-        if sleep_state not in ("light", "awake"):
-            return 0
-        fenetre = cfg.get(CONF_SOMMEIL_FENETRE_MIN, DEFAULT_SOMMEIL_FENETRE_MIN)
-        _LOGGER.info("Phase sommeil léger détectée — réveil avancé de %d min", fenetre)
-        self._log_event("Phase sommeil léger — réveil avancé")
-        return int(fenetre)
-
     def _planifier_trigger(self) -> None:
         """Programme les déclencheurs pour le pré-réveil et le réveil.
 
         La planification se cale sur `self._prochain`, qui intègre déjà le mode
-        « heure par jour », l'agenda adaptatif et la phase de sommeil. Un point
+        « heure par jour » et l'agenda adaptatif. Un point
         dans le temps est utilisé plutôt qu'un déclencheur horaire quotidien :
         ce dernier sonnait à toutes les heures configurées quel que soit le
         jour, et ignorait les décalages adaptatifs.

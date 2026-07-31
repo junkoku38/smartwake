@@ -729,7 +729,7 @@ async def test_planification_calee_sur_prochain(coordinator):
     Régression : async_track_time_change posait un déclencheur par heure
     configurée, sans vérifier le jour. En mode « heure par jour », l'heure du
     lundi sonnait donc aussi le mardi. Le décalage par agenda adaptatif et par
-    phase de sommeil était également ignoré.
+    par l'agenda adaptatif était également ignoré.
     """
     import custom_components.smartwake.coordinator as coord_mod
 
@@ -1511,5 +1511,88 @@ async def test_migration_vers_capteurs_de_presence(coordinator):
     ]
     assert "withings_bed_1" not in entry.data
     assert "ai_camera_verif" not in entry.data
+    assert entry.data["heure"] == "07:00"
+    assert entry.version == SCHEMA_VERSION
+
+
+# ── Suppression de « Phase de sommeil » ────────────────────────
+
+def test_phase_de_sommeil_supprimee():
+    """La fonctionnalité est retirée : aucun capteur grand public n'expose la
+    phase de sommeil courante.
+
+    Elle lisait un attribut `sleep_state` sur le capteur de présence au lit,
+    attribut qu'aucune intégration ne fournit — les capteurs de sommeil
+    publient des agrégats au réveil, pas un état pendant la nuit. La condition
+    `sleep_state not in ("light", "awake")` était donc toujours vraie et
+    l'avance valait systématiquement 0. Le champ n'était de surcroît présent
+    dans aucun formulaire : la fonctionnalité était inatteignable.
+    """
+    import glob
+    import os
+
+    for chemin in glob.glob("custom_components/smartwake/*.py"):
+        src = open(chemin, encoding="utf-8").read()
+        nom = os.path.basename(chemin)
+        if nom == "__init__.py":
+            continue  # la migration purge légitimement les anciennes clés
+        for interdit in ("CONF_SOMMEIL_PHASE", "CONF_SOMMEIL_FENETRE_MIN",
+                         "_avance_phase_sommeil", "sleep_state"):
+            assert interdit not in src, f"{nom} référence encore {interdit}"
+
+
+def test_aucun_libelle_orphelin_dans_les_traductions():
+    """Un libellé sans champ correspondant encombre les traductions et laisse
+    croire que l'option existe encore."""
+    import ast
+    import glob
+    import json
+
+    from custom_components.smartwake import const
+
+    valeurs = {v for k, v in vars(const).items()
+               if k.startswith("CONF_") and isinstance(v, str)}
+
+    for chemin in sorted(glob.glob("custom_components/smartwake/strings.json")
+                         + glob.glob("custom_components/smartwake/translations/*.json")):
+        d = json.load(open(chemin, encoding="utf-8"))
+
+        def _cles(noeud):
+            trouve = set()
+            if isinstance(noeud, dict):
+                for cle, val in noeud.items():
+                    if cle in ("data", "data_description") and isinstance(val, dict):
+                        trouve |= set(val)
+                    trouve |= _cles(val)
+            return trouve
+
+        orphelins = sorted(
+            c for c in _cles(d)
+            if c not in valeurs and c not in ("name", "preset")
+        )
+        assert not orphelins, f"{chemin} : libellés sans champ {orphelins}"
+
+
+@pytest.mark.asyncio
+async def test_migration_purge_la_phase_de_sommeil(coordinator):
+    """Les clés stockées doivent disparaître de la configuration."""
+    from custom_components.smartwake import async_migrate_entry
+    from custom_components.smartwake.const import SCHEMA_VERSION
+
+    entry = coordinator.entry
+    entry.version = 4
+    entry.data = {"heure": "07:00", "sommeil_phase": True, "sommeil_fenetre_min": 20}
+
+    def _update(e, data=None, version=None, **kw):
+        if data is not None:
+            e.data = dict(data)
+        if version is not None:
+            e.version = version
+
+    coordinator.hass.config_entries.async_update_entry = _update
+    assert await async_migrate_entry(coordinator.hass, entry) is True
+
+    assert "sommeil_phase" not in entry.data
+    assert "sommeil_fenetre_min" not in entry.data
     assert entry.data["heure"] == "07:00"
     assert entry.version == SCHEMA_VERSION

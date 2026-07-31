@@ -150,6 +150,13 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             # La vérification du lever n'utilise plus de caméra
             data.pop(CONF_AI_CAMERA_VERIF, None)
 
+        if entry.version < 5:
+            # « Phase de sommeil » est supprimée : aucun capteur grand public
+            # n'expose la phase de sommeil courante. Les intégrations publient
+            # des agrégats au réveil, pas un état pendant la nuit.
+            data.pop("sommeil_phase", None)
+            data.pop("sommeil_fenetre_min", None)
+
         hass.config_entries.async_update_entry(
             entry, data=data, version=SCHEMA_VERSION, minor_version=0
         )

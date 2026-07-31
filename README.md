@@ -136,7 +136,7 @@ entité. Pour un réveil nommé `reveil` :
 
 > `sensor.<nom>_prochain_reveil` est la **seule source fiable** de l'heure qui
 > sonnera : `time.<nom>_heure` n'est que l'heure de référence, et peut être
-> décalée par le mode `par_jour`, l'agenda adaptatif ou la phase de sommeil.
+> décalée par le mode `par_jour` ou l'agenda adaptatif.
 
 ### Events HA (pour automatisations externes)
 | Event | Déclencheur |

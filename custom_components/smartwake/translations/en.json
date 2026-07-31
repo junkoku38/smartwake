@@ -66,9 +66,7 @@
           "mouvement_cuisine": "Kitchen motion sensor",
           "adaptatif_agenda": "Adaptive alarm (align with 1st calendar event)",
           "agenda_entity": "Calendar (Google/CalDAV entity)",
-          "agenda_marge_min": "Margin before event (min)",
-          "sommeil_phase": "Wake in light sleep phase (±N min window)",
-          "sommeil_fenetre_min": "Wake window (min around target time)"
+          "agenda_marge_min": "Margin before event (min)"
         }
       },
       "notification": {

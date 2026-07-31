@@ -26,7 +26,7 @@ DOMAIN = "smartwake"
 
 # Version du schéma des config entries. Partagée entre le config flow et
 # async_migrate_entry pour qu'elles ne puissent pas divergerne.
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 def slugify(title: str) -> str:
@@ -104,8 +104,6 @@ CONF_PONCTUEL = "ponctuel"
 CONF_ADAPTATIF_AGENDA = "adaptatif_agenda"
 CONF_AGENDA_ENTITY = "agenda_entity"
 CONF_AGENDA_MARGE_MIN = "agenda_marge_min"
-CONF_SOMMEIL_PHASE = "sommeil_phase"
-CONF_SOMMEIL_FENETRE_MIN = "sommeil_fenetre_min"
 CONF_SNOOZE_DUREE = "snooze_duree"
 CONF_SNOOZE_MAX = "snooze_max"
 CONF_ESCALADE_MIN = "escalade_min"
@@ -173,7 +171,6 @@ DEFAULT_NOTIF_TITRE = "⏰ Réveil"
 DEFAULT_NOTIF_MESSAGE = "Il est l'heure de se lever !"
 DEFAULT_TTS_MESSAGE = "Bonjour. Bonne journée !"
 DEFAULT_AGENDA_MARGE_MIN = 90
-DEFAULT_SOMMEIL_FENETRE_MIN = 20
 DEFAULT_AI_BRIEFING = False
 DEFAULT_AI_MUSIQUE_ADAPT = False
 DEFAULT_AI_SUGGESTION_HEURE = False
