@@ -71,6 +71,22 @@
           "sommeil_fenetre_min": "Fenêtre de réveil (min)"
         }
       },
+      "ai": {
+        "title": "AI Task",
+        "description": "Fonctionnalités IA (requiert HA >= 2025.8 + AI Task configuré).",
+        "data": {
+          "ai_briefing": "Briefing matinal généré par IA",
+          "ai_task_entity": "Entité AI Task",
+          "ai_musique_adapt": "Musique adaptative IA",
+          "ai_suggestion_heure": "Suggestion d'heure du soir (notification actionnable)",
+          "ai_bilan_hebdo": "Bilan de sommeil hebdomadaire",
+          "ai_verif_lever": "Vérification lever par caméra+IA (10 min après Stop)",
+          "ai_camera_verif": "Caméra de vérification (chambre)",
+          "weather_entity": "Entité météo",
+          "trajet_sensor": "Capteur temps de trajet",
+          "batterie_sensor": "Capteur batterie téléphone"
+        }
+      },
       "notification": {
         "title": "Notification & contrôles",
         "description": "Notification mobile, snooze, escalade.",

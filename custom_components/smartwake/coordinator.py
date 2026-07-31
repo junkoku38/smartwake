@@ -37,6 +37,10 @@ from .const import (
     CONF_IGNORER_FERIES,
     CONF_IGNORER_VACANCES_SCOLAIRE,
     CONF_VACANCES_SCOLAIRES_CALENDAR,
+    CONF_AI_BRIEFING,
+    CONF_AI_MUSIQUE_ADAPT,
+    CONF_AI_SUGGESTION_HEURE,
+    CONF_AI_VERIF_LEVER,
     CONF_ADAPTATIF_AGENDA,
     CONF_AGENDA_ENTITY,
     CONF_AGENDA_MARGE_MIN,
@@ -143,6 +147,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
         self._reveil_en_cours = False
         self._snooze_count = 0
         self._skip_prochain = False
+        self._unsub_listeners: list[Callable] = []
 
     # ── Propriétés ──────────────────────────────────────────────
 
@@ -221,10 +226,71 @@ class ReveilCoordinator(DataUpdateCoordinator):
             elif action == "REVEIL_STOP":
                 _LOGGER.info("Action Stop reçue pour '%s'", self.entry.title)
                 self.hass.async_create_task(self.stop())
+            elif action and action.startswith("REVEIL_ACCEPTER_"):
+                # Suggestion IA acceptée — appliquer l'heure
+                heure = action.replace("REVEIL_ACCEPTER_", "")
+                _LOGGER.info("Suggestion IA acceptée: %s", heure)
+                self._log_event(f"Suggestion IA acceptée: {heure}")
+                self.hass.async_create_task(self.set_heure(heure))
+            elif action == "REVEIL_REFUSER":
+                _LOGGER.info("Suggestion IA refusée")
+                self._log_event("Suggestion IA refusée")
 
         self.hass.bus.async_listen(
             "mobile_app_notification_action", _handle_notification_action
         )
+
+        # Planifier la suggestion IA du soir (21:30) si activée
+        if self.entry.data.get(CONF_AI_SUGGESTION_HEURE):
+            self._setup_ai_suggestion()
+
+    def _setup_ai_suggestion(self) -> None:
+        """Planifie une suggestion d'heure IA chaque soir à 21:30."""
+        unsub = async_track_time_change(
+            self.hass,
+            self._ai_suggestion_callback,
+            hour=21, minute=30, second=0,
+        )
+        self._unsub_listeners.append(unsub)
+
+    @callback
+    def _ai_suggestion_callback(self, now: datetime) -> None:
+        """Callback du soir — génère une suggestion d'heure IA."""
+        if not self._actif:
+            return
+        self.hass.async_create_task(self._run_ai_suggestion())
+
+    async def _run_ai_suggestion(self) -> None:
+        """Génère et envoie une suggestion d'heure via IA + notification actionnable."""
+        from .ai import suggest_wake_time
+        cfg = self.entry.data
+        current_time = cfg.get(CONF_HEURE, "07:00")
+        suggestion = await suggest_wake_time(self.hass, cfg, current_time)
+        if not suggestion or not suggestion.get("decaler"):
+            return
+
+        heure_proposee = suggestion.get("heure_proposee", "")
+        raison = suggestion.get("raison", "")
+        notify_device = cfg.get(CONF_NOTIFY_DEVICE, "")
+        if not notify_device:
+            return
+
+        try:
+            await self.hass.services.async_call(
+                "notify", "send_message",
+                {
+                    "entity_id": notify_device,
+                    "title": "⏰ Suggestion réveil",
+                    "message": f"Demain : {heure_proposee} ? {raison}",
+                    "data": {"actions": [
+                        {"action": f"REVEIL_ACCEPTER_{heure_proposee}", "title": "Accepter"},
+                        {"action": "REVEIL_REFUSER", "title": f"Garder {current_time}"},
+                    ]},
+                },
+            )
+            self._log_event(f"Suggestion IA envoyée: {heure_proposee}")
+        except Exception as exc:
+            _LOGGER.error("Erreur envoi suggestion IA: %s", exc)
 
     async def async_shutdown(self) -> None:
         if self._cancel_trigger:
@@ -592,7 +658,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
 
         cfg = self.entry.data
 
-        # Musique + volume progressif
+        # Musique + volume progressif (avec IA adaptative si activée)
         if cfg.get(CONF_MUSIQUE_ACTIVEE) and cfg.get(CONF_MEDIA_PLAYER):
             await self._demarrer_musique()
 
@@ -618,13 +684,22 @@ class ReveilCoordinator(DataUpdateCoordinator):
             self._setup_mouvement_stop()
 
     async def _demarrer_musique(self) -> None:
-        """Démarre la musique avec volume progressif."""
+        """Démarre la musique avec volume progressif. IA adaptative si activée."""
         cfg = self.entry.data
         media = cfg[CONF_MEDIA_PLAYER]
         playlist = cfg.get(CONF_PLAYLIST, "")
         vol_initial = cfg.get(CONF_VOLUME_INITIAL, DEFAULT_VOLUME_INITIAL)
         vol_final = cfg.get(CONF_VOLUME_FINAL, DEFAULT_VOLUME_FINAL)
         duree = cfg.get(CONF_VOLUME_DUREE, DEFAULT_VOLUME_DUREE)
+
+        # Musique adaptative IA : choisir la playlist selon le contexte
+        if cfg.get(CONF_AI_MUSIQUE_ADAPT):
+            from .ai import choose_adaptive_music
+            playlist_options = [playlist, "France Inter", "Radio Nova", "Jazz doux"]
+            chosen = await choose_adaptive_music(self.hass, cfg, playlist_options)
+            if chosen:
+                playlist = chosen
+                self._log_event(f"Musique adaptative IA: {chosen}")
 
         try:
             await self.hass.services.async_call(
@@ -843,9 +918,20 @@ class ReveilCoordinator(DataUpdateCoordinator):
             except Exception as exc:
                 _LOGGER.error("Erreur extinction: %s", exc)
 
-        # TTS briefing
-        if cfg.get(CONF_TTS_ACTIVEE) and cfg.get(CONF_TTS_ENTITY):
+        # Briefing : IA si activée, sinon TTS basique
+        briefing_msg = None
+        if cfg.get(CONF_AI_BRIEFING):
+            from .ai import generate_briefing
+            briefing_msg = await generate_briefing(self.hass, cfg, self.entry.title)
+
+        if briefing_msg and cfg.get(CONF_TTS_ENTITY):
+            await self._tts_speak(briefing_msg)
+        elif cfg.get(CONF_TTS_ACTIVEE) and cfg.get(CONF_TTS_ENTITY):
             await self._tts_briefing()
+
+        # Vérif lever par IA (caméra) si activée
+        if cfg.get(CONF_AI_VERIF_LEVER):
+            self.hass.async_create_task(self._verif_lever_ia())
 
         self._reveil_en_cours = False
         self._skip_prochain = False
@@ -856,7 +942,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
         _LOGGER.info("Réveil '%s' arrêté", self.entry.title)
 
     async def _tts_briefing(self) -> None:
-        """Briefing vocal : météo, agenda."""
+        """Briefing vocal basique (fallback) : météo, agenda."""
         cfg = self.entry.data
         tts_entity = cfg[CONF_TTS_ENTITY]
         try:
@@ -865,13 +951,34 @@ class ReveilCoordinator(DataUpdateCoordinator):
             if meteo:
                 meteo_str = f"Météo: {meteo.state}, {meteo.attributes.get('temperature', '?')}°C. "
             message = f"Bonjour. {meteo_str}Bonne journée !"
+            await self._tts_speak(message)
+        except Exception as exc:
+            _LOGGER.error("Erreur TTS: %s", exc)
+
+    async def _tts_speak(self, message: str) -> None:
+        """Parle via TTS."""
+        cfg = self.entry.data
+        tts_entity = cfg[CONF_TTS_ENTITY]
+        try:
             await self.hass.services.async_call(
                 "tts", "speak",
                 {"entity_id": tts_entity, "message": message},
             )
-            _LOGGER.info("TTS briefing envoyé")
+            _LOGGER.info("TTS envoyé: %s...", message[:50])
         except Exception as exc:
             _LOGGER.error("Erreur TTS: %s", exc)
+
+    async def _verif_lever_ia(self) -> None:
+        """Vérifie 10 min après le Stop si la personne est encore au lit (caméra+IA)."""
+        await asyncio.sleep(10 * 60)
+        if self._reveil_en_cours:
+            return  # pas encore stoppé définitivement
+        from .ai import verify_person_in_bed
+        encore_au_lit = await verify_person_in_bed(self.hass, self.entry.data)
+        if encore_au_lit:
+            _LOGGER.info("Vérif IA: personne encore au lit — escalade")
+            self._log_event("Vérif IA: personne encore au lit — escalade")
+            await self._escalade(0)  # escalade immédiate
 
     async def sauter_prochain(self) -> None:
         """Saute le prochain réveil sans toucher la planification."""
@@ -894,3 +1001,24 @@ class ReveilCoordinator(DataUpdateCoordinator):
         if self._reveil_en_cours:
             return
         self._cancel_cycle = self.hass.async_create_task(self._executer_cycle())
+
+    async def bilan_hebdo_ia(self) -> None:
+        """Génère et envoie un bilan de sommeil hebdomadaire via IA."""
+        from .ai import generate_weekly_report
+        cfg = self.entry.data
+        if not cfg.get("ai_bilan_hebdo", False):
+            return
+        bilan = await generate_weekly_report(
+            self.hass, cfg, self._snooze_count, "historique non disponible"
+        )
+        if bilan:
+            notify_device = cfg.get(CONF_NOTIFY_DEVICE, "")
+            if notify_device:
+                try:
+                    await self.hass.services.async_call(
+                        "notify", "send_message",
+                        {"entity_id": notify_device, "title": "🛏️ Bilan sommeil", "message": bilan},
+                    )
+                    self._log_event("Bilan hebdo IA envoyé")
+                except Exception as exc:
+                    _LOGGER.error("Erreur envoi bilan hebdo: %s", exc)

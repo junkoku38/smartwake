@@ -24,8 +24,18 @@ from .const import (
     CONF_ADAPTATIF_AGENDA,
     CONF_AGENDA_ENTITY,
     CONF_AGENDA_MARGE_MIN,
+    CONF_AI_BILAN_HEBDO,
+    CONF_AI_BRIEFING,
+    CONF_AI_CAMERA_VERIF,
+    CONF_AI_MUSIQUE_ADAPT,
+    CONF_AI_SUGGESTION_HEURE,
+    CONF_AI_TASK_ENTITY,
+    CONF_AI_VERIF_LEVER,
+    CONF_BATTERIE_SENSOR,
     CONF_SOMMEIL_PHASE,
     CONF_SOMMEIL_FENETRE_MIN,
+    CONF_TRAJET_SENSOR,
+    CONF_WEATHER_ENTITY,
     CONF_IGNORER_FERIES,
     CONF_IGNORER_VACANCES_SCOLAIRE,
     CONF_VACANCES_SCOLAIRES_CALENDAR,
@@ -75,6 +85,11 @@ from .const import (
     DEFAULT_SNOOZE_DUREE,
     DEFAULT_SNOOZE_MAX,
     DEFAULT_AGENDA_MARGE_MIN,
+    DEFAULT_AI_BILAN_HEBDO,
+    DEFAULT_AI_BRIEFING,
+    DEFAULT_AI_MUSIQUE_ADAPT,
+    DEFAULT_AI_SUGGESTION_HEURE,
+    DEFAULT_AI_VERIF_LEVER,
     DEFAULT_SOMMEIL_FENETRE_MIN,
     DEFAULT_VOLUME_DUREE,
     DEFAULT_VOLUME_FINAL,
@@ -203,6 +218,22 @@ STEP_NOTIF_SCHEMA = vol.Schema(
     }
 )
 
+# ── Schéma étape 7 : AI Task (briefing, musique, suggestion, bilan) ─
+STEP_AI_SCHEMA = vol.Schema(
+    {
+        vol.Optional(CONF_AI_BRIEFING, default=DEFAULT_AI_BRIEFING): bool,
+        vol.Optional(CONF_AI_TASK_ENTITY): _entity_selector("ai_task"),
+        vol.Optional(CONF_AI_MUSIQUE_ADAPT, default=DEFAULT_AI_MUSIQUE_ADAPT): bool,
+        vol.Optional(CONF_AI_SUGGESTION_HEURE, default=DEFAULT_AI_SUGGESTION_HEURE): bool,
+        vol.Optional(CONF_AI_BILAN_HEBDO, default=DEFAULT_AI_BILAN_HEBDO): bool,
+        vol.Optional(CONF_AI_VERIF_LEVER, default=DEFAULT_AI_VERIF_LEVER): bool,
+        vol.Optional(CONF_AI_CAMERA_VERIF): _entity_selector("camera"),
+        vol.Optional(CONF_WEATHER_ENTITY): _entity_selector("weather"),
+        vol.Optional(CONF_TRAJET_SENSOR): _entity_selector("sensor"),
+        vol.Optional(CONF_BATTERIE_SENSOR): _entity_selector("sensor"),
+    }
+)
+
 
 class SmartWAKEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Gestion du flux de configuration multi-étapes."""
@@ -292,7 +323,19 @@ class SmartWAKEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_notification(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.FlowResult:
-        """Étape 6 : Notification, snooze, escalade — dernière étape."""
+        """Étape 6 : Notification, snooze, escalade."""
+        if user_input is not None:
+            self._data.update(user_input)
+            return await self.async_step_ai()
+        return self.async_show_form(
+            step_id="notification",
+            data_schema=STEP_NOTIF_SCHEMA,
+        )
+
+    async def async_step_ai(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        """Étape 7 : AI Task (briefing, musique, suggestion, bilan)."""
         if user_input is not None:
             self._data.update(user_input)
             titre = self._data[CONF_NAME]
@@ -300,8 +343,8 @@ class SmartWAKEConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._abort_if_unique_id_configured()
             return self.async_create_entry(title=titre, data=self._data)
         return self.async_show_form(
-            step_id="notification",
-            data_schema=STEP_NOTIF_SCHEMA,
+            step_id="ai",
+            data_schema=STEP_AI_SCHEMA,
         )
 
     @staticmethod

@@ -23,5 +23,10 @@
     "name": "Reset",
     "description": "Remet à zéro l'état du réveil.",
     "target": {"entity": {"integration": "smartwake", "domain": "switch"}}
+  },
+  "bilan_hebdo": {
+    "name": "Bilan hebdo IA",
+    "description": "Génère et envoie un bilan de sommeil hebdomadaire via AI Task.",
+    "target": {"entity": {"integration": "smartwake", "domain": "switch"}}
   }
 }

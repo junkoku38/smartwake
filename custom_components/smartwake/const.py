@@ -54,6 +54,19 @@ CONF_WITHINGS_BED_2 = "withings_bed_2"
 CONF_BRIGHTNESS_MAX = "brightness_max"
 CONF_DUREE_PROGRESSIVE = "duree_progressive"
 
+# ── AI Task ───────────────────────────────────────────────────
+CONF_AI_BRIEFING = "ai_briefing"
+CONF_AI_TASK_ENTITY = "ai_task_entity"
+CONF_AI_MUSIQUE_ADAPT = "ai_musique_adapt"
+CONF_AI_SUGGESTION_HEURE = "ai_suggestion_heure"
+CONF_AI_SUGGESTION_HEURE = "ai_suggestion_heure"
+CONF_AI_BILAN_HEBDO = "ai_bilan_hebdo"
+CONF_AI_VERIF_LEVER = "ai_verif_lever"
+CONF_AI_CAMERA_VERIF = "ai_camera_verif"
+CONF_WEATHER_ENTITY = "weather_entity"
+CONF_TRAJET_SENSOR = "trajet_sensor"
+CONF_BATTERIE_SENSOR = "batterie_sensor"
+
 # ── Valeurs par défaut ────────────────────────────────────────
 DEFAULT_VOLUME_INITIAL = 0.05
 DEFAULT_VOLUME_FINAL = 0.35
@@ -72,6 +85,11 @@ DEFAULT_NOTIF_TITRE = "⏰ Réveil"
 DEFAULT_NOTIF_MESSAGE = "Il est l'heure de se lever !"
 DEFAULT_AGENDA_MARGE_MIN = 90
 DEFAULT_SOMMEIL_FENETRE_MIN = 20
+DEFAULT_AI_BRIEFING = False
+DEFAULT_AI_MUSIQUE_ADAPT = False
+DEFAULT_AI_SUGGESTION_HEURE = False
+DEFAULT_AI_BILAN_HEBDO = False
+DEFAULT_AI_VERIF_LEVER = False
 
 # ── Jours ─────────────────────────────────────────────────────
 JOURS_OPTIONS = {
@@ -122,3 +140,4 @@ SERVICE_SNOOZE = "snooze"
 SERVICE_STOP = "stop"
 SERVICE_SKIP = "sauter_prochain"
 SERVICE_RESET = "reset"
+SERVICE_BILAN_HEBDO = "bilan_hebdo"

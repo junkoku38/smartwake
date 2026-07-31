@@ -20,6 +20,7 @@ from .const import (
     SERVICE_SKIP,
     SERVICE_SNOOZE,
     SERVICE_STOP,
+    SERVICE_BILAN_HEBDO,
 )
 from .coordinator import ReveilCoordinator
 
@@ -72,11 +73,18 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
             if coord:
                 await coord.reset()
 
+    async def _handle_bilan_hebdo(call: ServiceCall) -> None:
+        for eid in call.data.get(ATTR_ENTITY_ID, []):
+            coord = _get_coordinator(hass, eid)
+            if coord:
+                await coord.bilan_hebdo_ia()
+
     hass.services.async_register(DOMAIN, SERVICE_DECLENCHER, _handle_declencher, schema=SERVICE_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_SNOOZE, _handle_snooze, schema=SERVICE_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_STOP, _handle_stop, schema=SERVICE_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_SKIP, _handle_skip, schema=SERVICE_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_RESET, _handle_reset, schema=SERVICE_SCHEMA)
+    hass.services.async_register(DOMAIN, SERVICE_BILAN_HEBDO, _handle_bilan_hebdo, schema=SERVICE_SCHEMA)
 
     return True
 
