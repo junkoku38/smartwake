@@ -771,3 +771,182 @@ async def test_reste_actif_apres_modification_de_reglages(coordinator):
     assert coordinator._cancel_trigger is not None
     assert coordinator.config["aube_min"] == 25
     assert coordinator.config["heure"] == "06:45"
+
+
+# ── Régression : APIs Home Assistant invalides ─────────────────
+
+def test_aucune_api_de_suivi_supprimee():
+    """Régression : _ouvrir_volets_au_lever importait async_track_state_change,
+    retirée de Home Assistant. L'ImportError survenait dans une tâche, si bien
+    que les volets ne s'ouvraient jamais quand le soleil était sous l'horizon.
+    """
+    import re
+
+    src = open("custom_components/smartwake/coordinator.py", encoding="utf-8").read()
+    # async_track_state_change_event est la forme valide ; la forme sans
+    # suffixe _event n'existe plus. On ne cible que les appels et les imports,
+    # pas les mentions en commentaire.
+    appels = re.findall(r"async_track_state_change(?!_event)\s*\(", src)
+    imports = re.findall(r"import[^\n]*\basync_track_state_change(?!_event)\b", src)
+    assert not appels and not imports, (
+        f"{len(appels)} appel(s) et {len(imports)} import(s) de "
+        "async_track_state_change (API supprimée de Home Assistant)"
+    )
+
+
+def test_aucun_event_type_state_changed_suffixe():
+    """Régression : le bus écoutait « state_changed.<entité> », un event_type
+    qui n'existe pas. L'arrêt par mouvement salle de bain était du code mort."""
+    src = open("custom_components/smartwake/coordinator.py", encoding="utf-8").read()
+    assert 'async_listen(f"state_changed.' not in src
+    assert 'async_listen("state_changed.' not in src
+
+
+@pytest.mark.asyncio
+async def test_mouvement_stop_utilise_le_suivi_d_etat(coordinator):
+    """L'arrêt par mouvement doit s'abonner via async_track_state_change_event
+    et conserver son désabonnement (il était rappelé à chaque cycle)."""
+    import custom_components.smartwake.coordinator as coord_mod
+
+    coordinator.entry.data = {**coordinator.entry.data,
+                              "mouvement_sdb": "binary_sensor.mouvement_sdb"}
+    appels = []
+
+    def _spy(hass, entities, cb):
+        appels.append(entities)
+        return lambda: appels.append("unsub")
+
+    original = coord_mod.async_track_state_change_event
+    coord_mod.async_track_state_change_event = _spy
+    try:
+        coordinator._setup_mouvement_stop()
+        assert appels == [["binary_sensor.mouvement_sdb"]]
+        assert coordinator._cancel_mouvement is not None
+        # Un second appel ne doit pas empiler d'écouteur
+        coordinator._setup_mouvement_stop()
+        assert "unsub" in appels
+    finally:
+        coord_mod.async_track_state_change_event = original
+
+
+# ── Régression : ordre des actions du cycle ────────────────────
+
+@pytest.mark.asyncio
+async def test_notification_envoyee_avant_les_rampes(coordinator):
+    """Régression : la notification actionnable était envoyée après la musique
+    et la rampe de lumière, qui bloquent ~5 et ~19 min. Les boutons
+    Snooze/Stop n'arrivaient qu'environ 25 min après le début de la sonnerie.
+    """
+    coordinator.entry.data = {
+        **coordinator.entry.data,
+        "notification_activee": True,
+        "notify_device": "notify.mobile_app_test",
+        "musique_activee": True,
+        "media_player": "media_player.chambre",
+        "lumiere_activee": True,
+        "lumiere": "light.chambre",
+    }
+    ordre = []
+
+    async def _notif():
+        ordre.append("notification")
+
+    async def _musique():
+        ordre.append("musique")
+
+    async def _lumiere():
+        ordre.append("lumiere")
+
+    with patch.object(coordinator, "_envoyer_notification", _notif), \
+            patch.object(coordinator, "_demarrer_musique", _musique), \
+            patch.object(coordinator, "_cycle_lumiere_progressive", _lumiere), \
+            patch.object(coordinator, "_escalade", AsyncMock()), \
+            patch.object(coordinator, "_ouvrir_volets", AsyncMock()):
+        await coordinator._executer_cycle()
+        await asyncio.sleep(0)  # laisse les rampes démarrer
+
+    assert ordre[0] == "notification", f"ordre observé : {ordre}"
+
+
+@pytest.mark.asyncio
+async def test_escalade_programmee_une_seule_fois(coordinator):
+    """Régression : l'escalade était programmée deux fois. La première tâche
+    devenait orpheline dans _cancel_escalade et n'était donc plus annulable
+    par stop(), d'où un doublement du volume et des événements."""
+    escalade = AsyncMock()
+    with patch.object(coordinator, "_escalade", escalade), \
+            patch.object(coordinator, "_envoyer_notification", AsyncMock()):
+        await coordinator._executer_cycle()
+
+    assert escalade.call_count == 1, f"escalade lancée {escalade.call_count} fois"
+
+
+@pytest.mark.asyncio
+async def test_stop_annule_les_rampes(coordinator):
+    """stop() doit annuler les rampes parallèles, sinon la montée de volume
+    continuait après l'arrêt."""
+    async def _longue():
+        await asyncio.sleep(3600)
+
+    coordinator._reveil_en_cours = True
+    tache = asyncio.ensure_future(_longue())
+    coordinator._cancel_rampes = [tache]
+
+    await coordinator.stop()
+    await asyncio.sleep(0)
+
+    assert tache.cancelled() or tache.done()
+    assert coordinator._cancel_rampes == []
+
+
+# ── Régression : appel TTS ─────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_tts_cible_le_moteur_et_pas_l_enceinte(coordinator):
+    """Régression : tts.speak recevait l'enceinte (media_player) comme
+    entity_id et omettait media_player_entity_id, pourtant requis. L'appel
+    était rejeté et le briefing vocal ne fonctionnait jamais."""
+    coordinator.entry.data = {
+        **coordinator.entry.data,
+        "tts_entity": "media_player.chambre",
+        "tts_engine": "tts.piper",
+    }
+    # Le mock HA n'accepte pas le paramètre blocking
+    appels = []
+
+    async def _call(domain, service, data=None, **kw):
+        appels.append((domain, service, data or {}, kw))
+
+    coordinator.hass.services.async_call = _call
+
+    await coordinator._tts_speak("Bonjour")
+
+    tts = [a for a in appels if a[0] == "tts"]
+    assert len(tts) == 1, f"appels observés : {appels}"
+    _, service, data, kw = tts[0]
+    assert service == "speak"
+    assert data["entity_id"] == "tts.piper", "la cible doit être le moteur tts"
+    assert data["media_player_entity_id"] == "media_player.chambre"
+    assert data["message"] == "Bonjour"
+    assert kw.get("blocking") is True, "l'appel doit être bloquant pour remonter l'échec"
+
+
+@pytest.mark.asyncio
+async def test_tts_sans_moteur_ne_plante_pas(coordinator):
+    """Sans moteur configuré ni détectable, l'appel doit être ignoré
+    proprement plutôt que d'échouer."""
+    coordinator.entry.data = {
+        **coordinator.entry.data,
+        "tts_entity": "media_player.chambre",
+    }
+    coordinator.hass.states.async_all = lambda domain=None: []
+    appels = []
+
+    async def _call(domain, service, data=None, **kw):
+        appels.append(domain)
+
+    coordinator.hass.services.async_call = _call
+
+    await coordinator._tts_speak("Bonjour")
+
+    assert "tts" not in appels

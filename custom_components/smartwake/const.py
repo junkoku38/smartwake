@@ -62,7 +62,12 @@ CONF_NOTIFY_DEVICE = "notify_device"
 CONF_NOTIF_TITRE = "notif_titre"
 CONF_NOTIF_MESSAGE = "notif_message"
 CONF_TTS_ACTIVEE = "tts_activee"
+# Enceinte de sortie (media_player)
 CONF_TTS_ENTITY = "tts_entity"
+# Moteur de synthèse vocale (entité du domaine tts).
+# tts.speak cible le moteur et reçoit l'enceinte en paramètre séparé : sans
+# lui, l'appel était rejeté et le TTS ne fonctionnait jamais.
+CONF_TTS_ENGINE = "tts_engine"
 CONF_TTS_MESSAGE = "tts_message"
 CONF_PRESENCE = "presence"
 CONF_WORKDAY_SENSOR = "workday_sensor"

@@ -187,7 +187,8 @@
           "snooze_duree": "Snooze (min)",
           "snooze_max": "Max snooze",
           "escalade_min": "Escalade après (min)",
-          "tts_message": "Message vocal (TTS)"
+          "tts_message": "Message vocal (TTS)",
+          "tts_engine": "Moteur de synthèse vocale"
         },
         "data_description": {
           "notification_activee": "Envoie une notification sur votre téléphone avec les boutons Snooze et Stop.",
@@ -195,10 +196,11 @@
           "notif_titre": "Titre affiché dans la notification.",
           "notif_message": "Message affiché dans la notification.",
           "tts_activee": "Si activé, un briefing vocal est lu quand vous arrêtez le réveil (météo, agenda).",
-          "tts_entity": "L'entité TTS (media_player) qui parlera le briefing. Ex : tts.piper, media_player.enceinte.",
+          "tts_entity": "Enceinte sur laquelle le message est joué.",
           "snooze_duree": "Durée d'un snooze en minutes. La musique et la lumière reprennent après.",
           "snooze_max": "Nombre maximum de snoozes avant que le réveil ne se bloque.",
-          "escalade_min": "Si vous n'avez pas appuyé sur Stop après X minutes, le réveil escalade (volume max + lumières 100%)."
+          "escalade_min": "Si vous n'avez pas appuyé sur Stop après X minutes, le réveil escalade (volume max + lumières 100%).",
+          "tts_engine": "Entité du domaine tts (Google Translate, Piper, Cloud…). Laissez vide pour utiliser le premier moteur détecté."
         }
       },
       "ai": {

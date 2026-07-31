@@ -20,6 +20,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, State, callback
 from homeassistant.helpers.event import (
     async_track_point_in_time,
+    async_track_state_change_event,
     async_track_time_change,
 )
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
@@ -84,6 +85,7 @@ from .const import (
     CONF_SNOOZE_DUREE,
     CONF_SNOOZE_MAX,
     CONF_TTS_ACTIVEE,
+    CONF_TTS_ENGINE,
     CONF_TTS_ENTITY,
     CONF_TTS_MESSAGE,
     CONF_VOLUME_DUREE,
@@ -167,6 +169,11 @@ class ReveilCoordinator(DataUpdateCoordinator):
         self._cancel_prewake: Callable | None = None
         self._cancel_cycle: asyncio.Task | None = None
         self._cancel_escalade: asyncio.Task | None = None
+        self._cancel_mouvement: Callable | None = None
+        self._cancel_rampes: list[asyncio.Task] = []
+        # Vrai si la rampe de lumière a déjà été jouée par le pré-réveil,
+        # pour ne pas la relancer à l'heure du réveil
+        self._aube_faite = False
         self._reveil_en_cours = False
         self._snooze_count = 0
         self._skip_prochain = False
@@ -329,8 +336,12 @@ class ReveilCoordinator(DataUpdateCoordinator):
                 _LOGGER.info("Suggestion IA refusée")
                 self._log_event("Suggestion IA refusée")
 
-        self.hass.bus.async_listen(
-            "mobile_app_notification_action", _handle_notification_action
+        # Le désabonnement doit être conservé : sans cela l'écouteur survivait
+        # à chaque rechargement et un appui « Snooze » était traité N fois.
+        self._unsub_listeners.append(
+            self.hass.bus.async_listen(
+                "mobile_app_notification_action", _handle_notification_action
+            )
         )
 
         # Planifier la suggestion IA du soir (21:30) si activée
@@ -392,10 +403,22 @@ class ReveilCoordinator(DataUpdateCoordinator):
         if self._cancel_prewake:
             self._cancel_prewake()
             self._cancel_prewake = None
+        if self._cancel_mouvement:
+            self._cancel_mouvement()
+            self._cancel_mouvement = None
+        # Écouteurs longue durée (actions de notification, suggestion du soir) :
+        # ils n'étaient jamais libérés et s'accumulaient à chaque rechargement.
+        for unsub in self._unsub_listeners:
+            try:
+                unsub()
+            except Exception as exc:  # noqa: BLE001 - nettoyage best effort
+                _LOGGER.debug("Désabonnement impossible: %s", exc)
+        self._unsub_listeners.clear()
         for task in (self._cancel_cycle, self._cancel_escalade):
             if task and not task.done():
                 task.cancel()
         _LOGGER.info("Réveil '%s' arrêté", self.entry.title)
+        await super().async_shutdown()
 
     def _notify(self) -> None:
         self.async_set_updated_data({
@@ -830,6 +853,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
 
         # Simulation d'aube (lumière progressive)
         if cfg.get(CONF_LUMIERE_ACTIVEE) and cfg.get(CONF_LUMIERE):
+            self._aube_faite = True
             await self._cycle_lumiere_progressive()
 
         # Café / bouilloire
@@ -858,32 +882,10 @@ class ReveilCoordinator(DataUpdateCoordinator):
         self._increment_stat("total_declenchements")
         self._notify()
 
-        # Musique + volume progressif (avec IA adaptative si activée)
-        if cfg.get(CONF_MUSIQUE_ACTIVEE) and cfg.get(CONF_MEDIA_PLAYER):
-            try:
-                await self._demarrer_musique()
-            except Exception as exc:
-                erreurs.append("musique")
-                _LOGGER.error("Erreur critique musique: %s", exc)
-
-        # Volets si soleil levé
-        if cfg.get(CONF_VOLETS):
-            try:
-                await self._ouvrir_volets()
-            except Exception as exc:
-                erreurs.append("volets")
-                _LOGGER.error("Erreur critique volets: %s", exc)
-
-        # Lumière si pas déjà allumée par aube
-        if cfg.get(CONF_LUMIERE_ACTIVEE) and cfg.get(CONF_LUMIERE):
-            if self._statut != STATUT_PREWAKE:
-                try:
-                    await self._cycle_lumiere_progressive()
-                except Exception as exc:
-                    erreurs.append("lumière")
-                    _LOGGER.error("Erreur critique lumière: %s", exc)
-
-        # Notification actionnable
+        # 1. Notification actionnable EN PREMIER.
+        # Elle était envoyée après la musique et la rampe de lumière, qui
+        # bloquent respectivement ~5 et ~19 min : les boutons Snooze/Stop
+        # n'arrivaient sur le téléphone qu'environ 25 min après la sonnerie.
         if cfg.get(CONF_NOTIFICATION_ACTIVEE):
             try:
                 await self._envoyer_notification()
@@ -891,42 +893,86 @@ class ReveilCoordinator(DataUpdateCoordinator):
                 erreurs.append("notification")
                 _LOGGER.error("Erreur notification: %s", exc)
 
-        # Alerte si tout a échoué
-        if erreurs and not cfg.get(CONF_MUSIQUE_ACTIVEE):
-            self._log_event(f"Sonnerie échouée: {', '.join(erreurs)}")
-            # Notifier l'utilisateur de l'échec
-            notify = cfg.get(CONF_NOTIFY_DEVICE)
-            if notify:
-                try:
-                    await self.hass.services.async_call(
-                        "notify", "send_message",
-                        {"entity_id": notify, "title": "⚠️ SmartWAKE", "message": "Le réveil a échoué — vérifiez la configuration"},
-                    )
-                except Exception:
-                    pass
-
-        # Escalade programmée
-        escalade_min = cfg.get(CONF_ESCALADE_MIN, DEFAULT_ESCALADE_MIN)
-        self._cancel_escalade = self.hass.async_create_task(self._escalade(escalade_min))
-
-        # Arrêt par mouvement salle de bain
+        # 2. Arrêt par mouvement, armé avant les rampes pour la même raison
         if cfg.get(CONF_MOUVEMENT_STOP, False) and cfg.get(CONF_MOUVEMENT_SDB):
             self._setup_mouvement_stop()
 
-        # Scène matin (éclairage cuisine + couloir + autres pièces)
-        if cfg.get(CONF_SCENES_MATIN, False):
-            await self._activer_scene_matin()
+        # 3. Escalade — une seule fois. Elle était programmée deux fois, la
+        # première tâche devenant orpheline et donc non annulable par stop().
+        if cfg.get(CONF_ESCALADE_INTELLIGENTE, False):
+            self._cancel_escalade = self.hass.async_create_task(
+                self._escalade_intelligente()
+            )
+        else:
+            self._cancel_escalade = self.hass.async_create_task(
+                self._escalade(cfg.get(CONF_ESCALADE_MIN, DEFAULT_ESCALADE_MIN))
+            )
 
-        # AI task personnalisée (au déclenchement)
+        # 4. Rampes longues en parallèle plutôt qu'en séquence
+        self._cancel_rampes = []
+
+        async def _rampe(nom: str, coro) -> None:
+            try:
+                await coro
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                erreurs.append(nom)
+                _LOGGER.error("Erreur critique %s: %s", nom, exc)
+                if nom == "musique":
+                    await self._alerter_sonnerie_echouee(nom)
+
+        if cfg.get(CONF_MUSIQUE_ACTIVEE) and cfg.get(CONF_MEDIA_PLAYER):
+            self._cancel_rampes.append(
+                self.hass.async_create_task(_rampe("musique", self._demarrer_musique()))
+            )
+        if cfg.get(CONF_VOLETS):
+            self._cancel_rampes.append(
+                self.hass.async_create_task(_rampe("volets", self._ouvrir_volets()))
+            )
+        # La rampe de lumière n'est relancée que si l'aube ne l'a pas déjà fait.
+        # Le test précédent portait sur le statut, forcé à « ringing » juste
+        # au-dessus : il était donc toujours vrai et deux rampes concurrentes
+        # pilotaient la même lampe.
+        if cfg.get(CONF_LUMIERE_ACTIVEE) and cfg.get(CONF_LUMIERE) and not self._aube_faite:
+            self._cancel_rampes.append(
+                self.hass.async_create_task(
+                    _rampe("lumière", self._cycle_lumiere_progressive())
+                )
+            )
+
+        # 5. Scène matin et tâches IA
+        if cfg.get(CONF_SCENES_MATIN, False):
+            try:
+                await self._activer_scene_matin()
+            except Exception as exc:
+                _LOGGER.error("Erreur scène matin: %s", exc)
+
         if cfg.get(CONF_AI_CUSTOM_ENABLED) or cfg.get(CONF_AI_CUSTOM_TASKS):
             self.hass.async_create_task(self._run_custom_ai("on_wake"))
 
-        # Escalade intelligente (progressive au lieu de tout à 100%)
-        if cfg.get(CONF_ESCALADE_INTELLIGENTE, False):
-            self._cancel_escalade = self.hass.async_create_task(self._escalade_intelligente())
-        else:
-            escalade_min = cfg.get(CONF_ESCALADE_MIN, DEFAULT_ESCALADE_MIN)
-            self._cancel_escalade = self.hass.async_create_task(self._escalade(escalade_min))
+    async def _alerter_sonnerie_echouee(self, quoi: str) -> None:
+        """Prévient l'utilisateur quand le réveil sonore a échoué.
+
+        La condition précédente (`erreurs and not CONF_MUSIQUE_ACTIVEE`) ne
+        pouvait jamais être vraie : « musique » n'entre dans les erreurs que
+        si la musique est activée.
+        """
+        self._log_event(f"Sonnerie échouée: {quoi}")
+        notify = self.entry.data.get(CONF_NOTIFY_DEVICE)
+        if not notify:
+            return
+        try:
+            await self.hass.services.async_call(
+                "notify", "send_message",
+                {
+                    "entity_id": notify,
+                    "title": "⚠️ SmartWAKE",
+                    "message": f"Le réveil sonore a échoué ({quoi}) — vérifiez la configuration",
+                },
+            )
+        except Exception as exc:
+            _LOGGER.error("Erreur notification d'échec: %s", exc)
 
     async def _demarrer_musique(self) -> None:
         """Démarre la musique avec volume progressif. Retry + fallback TTS si échec."""
@@ -981,15 +1027,9 @@ class ReveilCoordinator(DataUpdateCoordinator):
         if not musique_ok:
             _LOGGER.error("Musique échouée après 3 tentatives — fallback TTS")
             self._log_event("Musique échouée — fallback")
-            # Fallback : notification + TTS d'alarme si configuré
-            if cfg.get(CONF_TTS_ENTITY):
-                try:
-                    await self.hass.services.async_call(
-                        "tts", "speak",
-                        {"entity_id": cfg[CONF_TTS_ENTITY], "message": "Il est l'heure de se lever !"},
-                    )
-                except Exception as exc:
-                    _LOGGER.error("Fallback TTS échoué: %s", exc)
+            # Fallback : TTS d'alarme si configuré
+            await self._tts_speak("Il est l'heure de se lever !")
+            await self._alerter_sonnerie_echouee("musique")
             return
 
         # Montée progressive du volume
@@ -1036,23 +1076,34 @@ class ReveilCoordinator(DataUpdateCoordinator):
         _LOGGER.error("Ouverture volets échouée après 2 tentatives")
 
     async def _ouvrir_volets_au_lever(self, volets: str) -> None:
-        """Ouvre les volets au lever du soleil (fallback)."""
-        from homeassistant.helpers.event import async_track_state_change
-        opened = False
+        """Ouvre les volets au lever du soleil (repli).
 
-        def _try_open(*args):
-            nonlocal opened
-            if opened:
+        Utilisait async_track_state_change, retirée de Home Assistant : l'import
+        levait ImportError dans la tâche, si bien que les volets ne s'ouvraient
+        jamais les jours où le soleil était encore sous l'horizon.
+        """
+        termine = asyncio.Event()
+
+        @callback
+        def _try_open(event) -> None:
+            if termine.is_set():
                 return
-            sun = self.hass.states.get("sun.sun")
-            if sun and sun.state == "above_horizon":
-                opened = True
+            nouveau = event.data.get("new_state")
+            if nouveau is not None and nouveau.state == "above_horizon":
+                termine.set()
                 self.hass.async_create_task(self._open_volets_now(volets))
 
-        unsub = async_track_state_change(self.hass, "sun.sun", _try_open)
-        # Timeout de 2h max
-        await asyncio.sleep(2 * 3600)
-        unsub()
+        unsub = async_track_state_change_event(self.hass, ["sun.sun"], _try_open)
+        try:
+            # Attente du lever, plafonnée à 2 h — libère dès l'ouverture au lieu
+            # de dormir systématiquement jusqu'au bout.
+            await asyncio.wait_for(termine.wait(), timeout=2 * 3600)
+        except asyncio.TimeoutError:
+            _LOGGER.warning("Lever du soleil non détecté en 2 h — volets non ouverts")
+        except asyncio.CancelledError:
+            raise
+        finally:
+            unsub()
 
     async def _open_volets_now(self, volets: str) -> None:
         try:
@@ -1206,18 +1257,39 @@ class ReveilCoordinator(DataUpdateCoordinator):
                 _LOGGER.error("Erreur escalade lumière: %s", exc)
 
     def _setup_mouvement_stop(self) -> None:
-        """Configure l'arrêt par détection de mouvement salle de bain."""
+        """Configure l'arrêt par détection de mouvement salle de bain.
+
+        Écoutait auparavant un event_type « state_changed.<entité> » qui
+        n'existe pas sur le bus Home Assistant : le callback n'était jamais
+        appelé et la fonction était donc morte. Le désabonnement n'était par
+        ailleurs pas conservé, alors que la méthode est rappelée à chaque
+        cycle — les écouteurs s'accumulaient.
+        """
         sdb = self.entry.data.get(CONF_MOUVEMENT_SDB)
         if not sdb:
             return
 
-        @callback
-        def _on_mouvement(event):
-            if self._reveil_en_cours:
-                _LOGGER.info("Mouvement SdB détecté — arrêt du réveil")
-                self.hass.async_create_task(self.stop())
+        # Évite d'empiler un écouteur par cycle
+        if self._cancel_mouvement is not None:
+            self._cancel_mouvement()
+            self._cancel_mouvement = None
 
-        self.hass.bus.async_listen(f"state_changed.{sdb}", _on_mouvement)
+        @callback
+        def _on_mouvement(event) -> None:
+            if not self._reveil_en_cours:
+                return
+            nouveau = event.data.get("new_state")
+            ancien = event.data.get("old_state")
+            if nouveau is None or nouveau.state != "on":
+                return
+            if ancien is not None and ancien.state == "on":
+                return  # déjà détecté, pas une nouvelle transition
+            _LOGGER.info("Mouvement SdB détecté — arrêt du réveil")
+            self.hass.async_create_task(self.stop(raison="mouvement_sdb"))
+
+        self._cancel_mouvement = async_track_state_change_event(
+            self.hass, [sdb], _on_mouvement
+        )
 
     # ── Snooze / Stop / Skip ────────────────────────────────────
 
@@ -1277,11 +1349,17 @@ class ReveilCoordinator(DataUpdateCoordinator):
         if not self._reveil_en_cours:
             return
 
-        for task in (self._cancel_cycle, self._cancel_escalade):
+        for task in (self._cancel_cycle, self._cancel_escalade, *self._cancel_rampes):
             if task and not task.done():
                 task.cancel()
         self._cancel_cycle = None
         self._cancel_escalade = None
+        # Les rampes (musique, lumière, volets) tournent en parallèle : sans
+        # cette annulation, la montée de volume continuait après le stop.
+        self._cancel_rampes = []
+        if self._cancel_mouvement is not None:
+            self._cancel_mouvement()
+            self._cancel_mouvement = None
 
         cfg = self.entry.data
         if cfg.get(CONF_MUSIQUE_ACTIVEE) and cfg.get(CONF_MEDIA_PLAYER):
@@ -1323,6 +1401,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
         self._reveil_en_cours = False
         self._skip_prochain = False
         self._skip_date = None
+        self._aube_faite = False
         self._statut = STATUT_DONE
         # Réarme le déclencheur pour l'occurrence suivante : la planification
         # est à usage unique depuis le passage en point-dans-le-temps.
@@ -1357,16 +1436,51 @@ class ReveilCoordinator(DataUpdateCoordinator):
         except Exception as exc:
             _LOGGER.error("Erreur TTS: %s", exc)
 
+    def _tts_engine(self) -> str | None:
+        """Entité du moteur de synthèse vocale.
+
+        Si elle n'est pas configurée, on retient la première entité du domaine
+        `tts` disponible : c'est plus utile que d'échouer silencieusement.
+        """
+        engine = self.entry.data.get(CONF_TTS_ENGINE)
+        if engine:
+            return engine
+        for state in self.hass.states.async_all("tts"):
+            return state.entity_id
+        return None
+
     async def _tts_speak(self, message: str) -> None:
-        """Parle via TTS."""
+        """Parle via TTS sur l'enceinte configurée.
+
+        `tts.speak` cible le moteur (`tts.*`) et reçoit l'enceinte dans
+        `media_player_entity_id`. L'appel passait auparavant l'enceinte comme
+        `entity_id` et omettait le paramètre requis : il était donc toujours
+        rejeté, ce qui rendait le briefing vocal inopérant.
+        """
         cfg = self.entry.data
-        tts_entity = cfg[CONF_TTS_ENTITY]
+        enceinte = cfg.get(CONF_TTS_ENTITY)
+        if not enceinte:
+            _LOGGER.debug("TTS ignoré : aucune enceinte configurée")
+            return
+
+        engine = self._tts_engine()
+        if not engine:
+            _LOGGER.warning(
+                "TTS impossible : aucun moteur de synthèse vocale configuré ni détecté"
+            )
+            return
+
         try:
             await self.hass.services.async_call(
                 "tts", "speak",
-                {"entity_id": tts_entity, "message": message},
+                {
+                    "entity_id": engine,
+                    "media_player_entity_id": enceinte,
+                    "message": message,
+                },
+                blocking=True,
             )
-            _LOGGER.info("TTS envoyé: %s...", message[:50])
+            _LOGGER.info("TTS envoyé sur %s: %s...", enceinte, message[:50])
         except Exception as exc:
             _LOGGER.error("Erreur TTS: %s", exc)
 
@@ -1416,6 +1530,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
         self._snooze_count = 0
         self._skip_prochain = False
         self._skip_date = None
+        self._aube_faite = False
         self._reveil_en_cours = False
         self._statut = STATUT_IDLE if self._actif else STATUT_INACTIF
         self._planifier_trigger()
