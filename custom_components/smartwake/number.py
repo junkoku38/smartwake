@@ -126,11 +126,9 @@ class ReveilNumber(NumberEntity):
 
     async def async_set_native_value(self, value: float) -> None:
         key = self.entity_description.key
-        new_data = {**self.entry.data, key: value}
-        self.hass.config_entries.async_update_entry(self.entry, data=new_data)
-        if self.coordinator.actif:
-            self.coordinator._planifier_trigger()
-        self.coordinator._notify()
+        if self.native_step is not None and float(self.native_step).is_integer():
+            value = int(value)
+        await self.coordinator.set_config_value(key, value)
 
     async def async_added_to_hass(self) -> None:
         self.async_on_remove(self.coordinator.async_add_listener(self._handle_update))
