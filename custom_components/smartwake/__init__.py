@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 import voluptuous as vol
@@ -102,6 +103,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
 
     _LOGGER.info("SmartWAKE '%s' configuré", entry.title)
+
+    # Injecter la carte Lovelace dans le dashboard par défaut (asynchrone)
+    from .dashboard import inject_dashboard
+    async def _delayed_inject():
+        await asyncio.sleep(5)
+        await inject_dashboard(hass, entry)
+    hass.async_create_task(_delayed_inject())
+
     return True
 
 
@@ -116,6 +125,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     _LOGGER.info("SmartWAKE '%s' supprimé", entry.title)
+    from .dashboard import remove_dashboard
+    await remove_dashboard(hass, entry)
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
