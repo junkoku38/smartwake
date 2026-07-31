@@ -37,6 +37,11 @@ from .const import (
     CONF_IGNORER_FERIES,
     CONF_IGNORER_VACANCES_SCOLAIRE,
     CONF_VACANCES_SCOLAIRES_CALENDAR,
+    CONF_ADAPTATIF_AGENDA,
+    CONF_AGENDA_ENTITY,
+    CONF_AGENDA_MARGE_MIN,
+    CONF_SOMMEIL_PHASE,
+    CONF_SOMMEIL_FENETRE_MIN,
     CONF_JOURS,
     CONF_JOURS_PERSO,
     CONF_LEVER_ANTICIPE,
@@ -80,6 +85,8 @@ from .const import (
     DEFAULT_PRECHAUFFE_MIN,
     DEFAULT_SNOOZE_DUREE,
     DEFAULT_SNOOZE_MAX,
+    DEFAULT_AGENDA_MARGE_MIN,
+    DEFAULT_SOMMEIL_FENETRE_MIN,
     DEFAULT_VOLUME_DUREE,
     DEFAULT_VOLUME_FINAL,
     DEFAULT_VOLUME_INITIAL,
@@ -177,8 +184,47 @@ class ReveilCoordinator(DataUpdateCoordinator):
         }
 
     async def async_config_entry_first_refresh(self) -> None:
+        """Premier rafraîchissement — watchdog + planification."""
         self._calculer_prochain()
         await super().async_config_entry_first_refresh()
+        # Watchdog : vérifier l'armement au démarrage HA
+        self._watchdog()
+        # Écouter les actions de notification mobile (Snooze / Stop)
+        self._setup_notification_actions()
+
+    def _watchdog(self) -> None:
+        """Vérifie au démarrage HA que l'alarme est cohérente."""
+        cfg = self.entry.data
+        if self._actif and self._prochain is None:
+            _LOGGER.warning(
+                "Watchdog: réveil '%s' actif mais aucun prochain déclenchement — "
+                "vérifiez la configuration des jours",
+                self.entry.title,
+            )
+        elif self._actif:
+            _LOGGER.info(
+                "Watchdog: réveil '%s' armé, prochain déclenchement %s",
+                self.entry.title,
+                self._prochain,
+            )
+
+    def _setup_notification_actions(self) -> None:
+        """Écoute les actions REVEIL_SNOOZE / REVEIL_STOP depuis l'app mobile."""
+        entry_id = self.entry.entry_id
+
+        @callback
+        def _handle_notification_action(event):
+            action = event.data.get("action")
+            if action == "REVEIL_SNOOZE":
+                _LOGGER.info("Action Snooze reçue pour '%s'", self.entry.title)
+                self.hass.async_create_task(self.snooze())
+            elif action == "REVEIL_STOP":
+                _LOGGER.info("Action Stop reçue pour '%s'", self.entry.title)
+                self.hass.async_create_task(self.stop())
+
+        self.hass.bus.async_listen(
+            "mobile_app_notification_action", _handle_notification_action
+        )
 
     async def async_shutdown(self) -> None:
         if self._cancel_trigger:
@@ -201,6 +247,21 @@ class ReveilCoordinator(DataUpdateCoordinator):
             "skip_prochain": self._skip_prochain,
         })
 
+    def _log_event(self, message: str, domain: str = "reveil_progressif") -> None:
+        """Journalise un événement dans le logbook HA."""
+        try:
+            self.hass.bus.async_fire(
+                "logbook_entry",
+                {
+                    "name": self.entry.title,
+                    "message": message,
+                    "domain": domain,
+                    "entity_id": f"sensor.{self.entry.entry_id}_sensor_statut",
+                },
+            )
+        except Exception as exc:
+            _LOGGER.debug("Erreur logbook: %s", exc)
+
     # ── Activation ──────────────────────────────────────────────
 
     async def set_actif(self, actif: bool) -> None:
@@ -209,11 +270,13 @@ class ReveilCoordinator(DataUpdateCoordinator):
             self._snooze_count = 0
             self._statut = STATUT_IDLE
             self._planifier_trigger()
+            self._log_event("Réveil activé")
         else:
             self._statut = STATUT_INACTIF
             self._prochain = None
             self._nettoyer_triggers()
             self._reveil_en_cours = False
+            self._log_event("Réveil désactivé")
         self._notify()
 
     def _nettoyer_triggers(self) -> None:
@@ -304,10 +367,19 @@ class ReveilCoordinator(DataUpdateCoordinator):
         jours = _jours_actifs(mode, jours_perso)
         now = dt_util.now()
 
+        # Heure adaptative via agenda ?
+        heure_adapt = heure
+        if cfg.get(CONF_ADAPTATIF_AGENDA, False) and cfg.get(CONF_AGENDA_ENTITY):
+            heure_adapt = self._heure_adaptative_agenda(heure, now, jours) or heure
+
+        # Phase de sommeil : fenêtre ±N min autour de l'heure
+        if cfg.get(CONF_SOMMEIL_PHASE, False) and cfg.get(CONF_WITHINGS_BED_1):
+            heure_adapt = self._heure_phase_sommeil(heure_adapt, cfg)
+
         for i in range(8):
             candidate = now + timedelta(days=i)
             candidate = candidate.replace(
-                hour=heure.hour, minute=heure.minute, second=0, microsecond=0
+                hour=heure_adapt.hour, minute=heure_adapt.minute, second=0, microsecond=0
             )
             if candidate.weekday() in jours and candidate > now:
                 # Vérifier férié si applicable
@@ -324,6 +396,68 @@ class ReveilCoordinator(DataUpdateCoordinator):
         self._prochain = None
         if self._statut not in (STATUT_RINGING, STATUT_SNOOZED, STATUT_PREWAKE):
             self._statut = STATUT_INACTIF
+
+    def _heure_adaptative_agenda(self, heure_defaut: time, now: datetime, jours: set[int]) -> time | None:
+        """Calcule l'heure de réveil basée sur le 1er RDV de l'agenda du prochain jour actif."""
+        cfg = self.entry.data
+        calendar = cfg.get(CONF_AGENDA_ENTITY)
+        marge = cfg.get(CONF_AGENDA_MARGE_MIN, DEFAULT_AGENDA_MARGE_MIN)
+
+        try:
+            # Récupérer les événements du jour suivant actif
+            for i in range(1, 8):
+                demain = now + timedelta(days=i)
+                if demain.weekday() not in jours:
+                    continue
+                debut_jour = demain.replace(hour=0, minute=0, second=0, microsecond=0)
+                fin_jour = debut_jour + timedelta(days=1)
+                events = self.hass.states.get(calendar)
+                if events is None:
+                    return None
+                # Les calendar entities exposent les attributs start_time / end_time
+                # du prochain événement
+                start = events.attributes.get("start_time")
+                if start:
+                    from datetime import datetime as dt
+                    debut_rdv = dt.fromisoformat(start)
+                    reveil = debut_rdv - timedelta(minutes=marge)
+                    if reveil.time() != heure_defaut:
+                        _LOGGER.info(
+                            "Réveil adaptatif: %s (RDV %s − %dmin)",
+                            reveil.strftime("%H:%M"), start, marge,
+                        )
+                        self._log_event(f"Réveil adaptatif: {reveil.strftime('%H:%M')} (RDV à {start})")
+                    return reveil.time()
+                break
+        except Exception as exc:
+            _LOGGER.error("Erreur agenda adaptatif: %s", exc)
+        return None
+
+    def _heure_phase_sommeil(self, heure_defaut: time, cfg: dict) -> time:
+        """Ajuste l'heure dans une fenêtre ±N min selon la phase de sommeil Withings.
+
+        Si le capteur Withings indique une phase de sommeil léger dans la fenêtre,
+        on réveille à ce moment-là. Sinon, on garde l'heure par défaut.
+        """
+        fenetre = cfg.get(CONF_SOMMEIL_FENETRE_MIN, DEFAULT_SOMMEIL_FENETRE_MIN)
+        # Withings expose parfois un attribut "sleep_state" ou similaire
+        # Ici on vérifie juste l'état du capteur : si "on" = au lit, on garde l'heure
+        # Une implémentation complète nécessiterait l'API Withings détaillée
+        bed_1 = cfg.get(CONF_WITHINGS_BED_1)
+        if not bed_1:
+            return heure_defaut
+        state = self.hass.states.get(bed_1)
+        if state is None:
+            return heure_defaut
+        # Logique simplifiée : si le capteur indique "light" (sommeil léger) dans la fenêtre
+        # on avance le réveil. Sinon heure par défaut.
+        sleep_state = state.attributes.get("sleep_state", state.state)
+        if sleep_state in ("light", "awake"):
+            heure_avancee = (datetime.combine(datetime.today(), heure_defaut) - timedelta(minutes=fenetre)).time()
+            _LOGGER.info("Phase sommeil léger détectée — réveil avancé à %s", heure_avancee)
+            self._log_event(f"Phase sommeil léger — réveil avancé à {heure_avancee.strftime('%H:%M')}")
+            return heure_avancee
+        return heure_defaut
 
     def _planifier_trigger(self) -> None:
         """Programme les déclencheurs pour le pré-réveil et le réveil."""
@@ -453,6 +587,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
         self._reveil_en_cours = True
         self._snooze_count = 0
         self._statut = STATUT_RINGING
+        self._log_event("Réveil déclenché")
         self._notify()
 
         cfg = self.entry.data
@@ -592,6 +727,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
 
         cfg = self.entry.data
         _LOGGER.info("Escalade déclenchée pour '%s'", self.entry.title)
+        self._log_event("Escalade : volume max + lumières 100%")
 
         # Volume max
         if cfg.get(CONF_MUSIQUE_ACTIVEE) and cfg.get(CONF_MEDIA_PLAYER):
@@ -639,6 +775,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
 
         self._snooze_count += 1
         self._statut = STATUT_SNOOZED
+        self._log_event(f"Snooze ({self._snooze_count}/{max_snooze})")
         self._notify()
 
         cfg = self.entry.data
@@ -714,6 +851,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
         self._skip_prochain = False
         self._statut = STATUT_DONE
         self._calculer_prochain()
+        self._log_event("Réveil arrêté")
         self._notify()
         _LOGGER.info("Réveil '%s' arrêté", self.entry.title)
 

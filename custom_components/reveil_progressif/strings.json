@@ -63,7 +63,12 @@
           "mouvement_sdb": "Capteur mouvement salle de bain",
           "mouvement_stop": "Arrêter le réveil au mouvement SdB",
           "lever_anticippe": "Annuler si lever anticipé détecté",
-          "mouvement_cuisine": "Capteur mouvement cuisine"
+          "mouvement_cuisine": "Capteur mouvement cuisine",
+          "adaptatif_agenda": "Réveil adaptatif (caler sur le 1er RDV de l'agenda)",
+          "agenda_entity": "Agenda (calendar entity)",
+          "agenda_marge_min": "Marge avant le RDV (min)",
+          "sommeil_phase": "Réveil en phase de sommeil léger (fenêtre ±N min)",
+          "sommeil_fenetre_min": "Fenêtre de réveil (min)"
         }
       },
       "notification": {

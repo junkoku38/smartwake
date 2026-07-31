@@ -37,6 +37,11 @@ CONF_IGNORER_VACANCES_SCOLAIRE = "ignorer_vacances_scolaire"
 CONF_MODE_VACANCES = "mode_vacances"
 CONF_SKIP_PROCHAIN = "skip_prochain"
 CONF_PONCTUEL = "ponctuel"
+CONF_ADAPTATIF_AGENDA = "adaptatif_agenda"
+CONF_AGENDA_ENTITY = "agenda_entity"
+CONF_AGENDA_MARGE_MIN = "agenda_marge_min"
+CONF_SOMMEIL_PHASE = "sommeil_phase"
+CONF_SOMMEIL_FENETRE_MIN = "sommeil_fenetre_min"
 CONF_SNOOZE_DUREE = "snooze_duree"
 CONF_SNOOZE_MAX = "snooze_max"
 CONF_ESCALADE_MIN = "escalade_min"
@@ -65,6 +70,8 @@ DEFAULT_CAFETIERE_MIN = 10
 DEFAULT_AUBE_MIN = 20
 DEFAULT_NOTIF_TITRE = "⏰ Réveil"
 DEFAULT_NOTIF_MESSAGE = "Il est l'heure de se lever !"
+DEFAULT_AGENDA_MARGE_MIN = 90
+DEFAULT_SOMMEIL_FENETRE_MIN = 20
 
 # ── Jours ─────────────────────────────────────────────────────
 JOURS_OPTIONS = {

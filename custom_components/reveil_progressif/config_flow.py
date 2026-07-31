@@ -21,6 +21,11 @@ from .const import (
     CONF_DUREE_PROGRESSIVE,
     CONF_ESCALADE_MIN,
     CONF_HEURE,
+    CONF_ADAPTATIF_AGENDA,
+    CONF_AGENDA_ENTITY,
+    CONF_AGENDA_MARGE_MIN,
+    CONF_SOMMEIL_PHASE,
+    CONF_SOMMEIL_FENETRE_MIN,
     CONF_IGNORER_FERIES,
     CONF_IGNORER_VACANCES_SCOLAIRE,
     CONF_VACANCES_SCOLAIRES_CALENDAR,
@@ -69,6 +74,8 @@ from .const import (
     DEFAULT_PRECHAUFFE_MIN,
     DEFAULT_SNOOZE_DUREE,
     DEFAULT_SNOOZE_MAX,
+    DEFAULT_AGENDA_MARGE_MIN,
+    DEFAULT_SOMMEIL_FENETRE_MIN,
     DEFAULT_VOLUME_DUREE,
     DEFAULT_VOLUME_FINAL,
     DEFAULT_VOLUME_INITIAL,
@@ -173,6 +180,11 @@ STEP_INTELL_SCHEMA = vol.Schema(
         vol.Optional(CONF_MOUVEMENT_STOP, default=False): bool,
         vol.Optional(CONF_LEVER_ANTICIPE, default=False): bool,
         vol.Optional(CONF_MOUVEMENT_CUISINE): _entity_selector("binary_sensor"),
+        vol.Optional(CONF_ADAPTATIF_AGENDA, default=False): bool,
+        vol.Optional(CONF_AGENDA_ENTITY): _entity_selector("calendar"),
+        vol.Optional(CONF_AGENDA_MARGE_MIN, default=DEFAULT_AGENDA_MARGE_MIN): _num(15, 240, 5, "min"),
+        vol.Optional(CONF_SOMMEIL_PHASE, default=False): bool,
+        vol.Optional(CONF_SOMMEIL_FENETRE_MIN, default=DEFAULT_SOMMEIL_FENETRE_MIN): _num(5, 45, 5, "min"),
     }
 )
 
