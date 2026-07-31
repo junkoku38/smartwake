@@ -1,0 +1,65 @@
+{
+  "title": "Progressive alarm",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Create an alarm",
+        "description": "Configure your progressive alarm. Give it a name, a time, and choose options.",
+        "data": {
+          "name": "Alarm name",
+          "heure": "Alarm time",
+          "jours": "Active days",
+          "lumiere_activee": "Enable progressive light",
+          "lumiere": "Light to turn on progressively",
+          "musique_activee": "Enable music",
+          "media_player": "Media player",
+          "playlist": "Spotify playlist ID",
+          "volume": "Music volume",
+          "radiateur": "Heater (optional)",
+          "notification_activee": "Enable reminder notification",
+          "notify_device": "Mobile notification service",
+          "withings_bed_1": "Bed sensor 1 (Withings)",
+          "withings_bed_2": "Bed sensor 2 (Withings)",
+          "brightness_max": "Max brightness (1-255)",
+          "duree_progressive": "Progressive light duration (min)"
+        }
+      }
+    },
+    "error": {
+      "media_required": "Select a media player if music is enabled",
+      "light_required": "Select a light if progressive light is enabled"
+    },
+    "abort": {
+      "already_configured": "An alarm with this name already exists"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Edit alarm",
+        "description": "Adjust your alarm settings.",
+        "data": {
+          "heure": "Alarm time",
+          "jours": "Active days",
+          "lumiere_activee": "Enable progressive light",
+          "lumiere": "Light to turn on progressively",
+          "musique_activee": "Enable music",
+          "media_player": "Media player",
+          "playlist": "Spotify playlist ID",
+          "volume": "Music volume",
+          "radiateur": "Heater (optional)",
+          "notification_activee": "Enable reminder notification",
+          "notify_device": "Mobile notification service",
+          "withings_bed_1": "Bed sensor 1 (Withings)",
+          "withings_bed_2": "Bed sensor 2 (Withings)",
+          "brightness_max": "Max brightness (1-255)",
+          "duree_progressive": "Progressive light duration (min)"
+        }
+      }
+    },
+    "error": {
+      "media_required": "Select a media player if music is enabled",
+      "light_required": "Select a light if progressive light is enabled"
+    }
+  }
+}

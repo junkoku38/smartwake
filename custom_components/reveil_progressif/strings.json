@@ -1,0 +1,132 @@
+{
+  "title": "Réveil progressif",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Créer un réveil",
+        "description": "Configurez le nom, l'heure et les jours de votre réveil.",
+        "data": {
+          "name": "Nom du réveil",
+          "heure": "Heure du réveil",
+          "jours": "Jours actifs",
+          "jours_perso": "Jours personnalisés (si mode Personnalisé)",
+          "ponctuel": "Réveil ponctuel (auto-désactive après sonnerie)",
+          "skip_prochain": "Sauter le prochain réveil",
+          "mode_vacances": "Mode vacances (suspend ce réveil)"
+        }
+      },
+      "lumiere": {
+        "title": "Lumière & aube",
+        "description": "Configuration de la simulation d'aube et de l'éclairage progressif.",
+        "data": {
+          "lumiere_activee": "Activer la lumière progressive",
+          "lumiere": "Lumière à allumer progressivement",
+          "brightness_max": "Luminosité maximale (1-255)",
+          "duree_progressive": "Durée de l'éclairage progressif (min)",
+          "aube_min": "Durée simulation aube avant réveil (min)"
+        }
+      },
+      "musique": {
+        "title": "Musique",
+        "description": "Source musicale et volume progressif.",
+        "data": {
+          "musique_activee": "Activer la musique",
+          "media_player": "Lecteur de musique",
+          "playlist": "ID de la playlist / URL radio",
+          "volume_initial": "Volume initial",
+          "volume_final": "Volume final",
+          "volume_duree": "Durée de montée du volume (min)"
+        }
+      },
+      "confort": {
+        "title": "Confort",
+        "description": "Préparation de la maison avant le réveil.",
+        "data": {
+          "prechauffe_min": "Pré-chauffage avant (min)",
+          "radiateur": "Radiateur / thermostat (climate)",
+          "chauffe_eau": "Chauffe-eau / sèche-serviettes (switch)",
+          "cafetiere": "Cafetière / bouilloire (switch)",
+          "cafetiere_min": "Café avant (min)",
+          "volets": "Volets à ouvrir (cover)",
+          "volets_soleil": "Ouvrir volets seulement si soleil levé"
+        }
+      },
+      "intelligence": {
+        "title": "Intelligence contextuelle",
+        "description": "Conditions de présence, jours fériés, sommeil.",
+        "data": {
+          "presence": "Entité de présence (person)",
+          "workday_sensor": "Capteur jours fériés (binary_sensor)",
+          "ignorer_feries": "Ignorer les jours fériés",
+          "withings_bed_1": "Capteur de lit 1 (Withings)",
+          "withings_bed_2": "Capteur de lit 2 (Withings)",
+          "mouvement_sdb": "Capteur mouvement salle de bain",
+          "mouvement_stop": "Arrêter le réveil au mouvement SdB",
+          "lever_anticippe": "Annuler si lever anticipé détecté",
+          "mouvement_cuisine": "Capteur mouvement cuisine"
+        }
+      },
+      "notification": {
+        "title": "Notification & contrôles",
+        "description": "Notification mobile, snooze, escalade.",
+        "data": {
+          "notification_activee": "Activer la notification",
+          "notify_device": "Service de notification mobile",
+          "notif_titre": "Titre de la notification",
+          "notif_message": "Message de la notification",
+          "tts_activee": "Activer le briefing TTS au Stop",
+          "tts_entity": "Entité TTS (media_player)",
+          "snooze_duree": "Durée du snooze (min)",
+          "snooze_max": "Nombre max de snooze",
+          "escalade_min": "Escalade après (min)"
+        }
+      }
+    },
+    "error": {
+      "media_required": "Sélectionnez un lecteur de musique si la musique est activée",
+      "light_required": "Sélectionnez une lumière si la lumière progressive est activée",
+      "jours_perso_required": "Sélectionnez au moins un jour si mode Personnalisé"
+    },
+    "abort": {
+      "already_configured": "Un réveil avec ce nom existe déjà"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Modifier le réveil",
+        "description": "Ajustez les paramètres de votre réveil.",
+        "data": {
+          "heure": "Heure du réveil",
+          "jours": "Jours actifs",
+          "lumiere_activee": "Activer la lumière progressive",
+          "lumiere": "Lumière",
+          "musique_activee": "Activer la musique",
+          "media_player": "Lecteur de musique",
+          "playlist": "Playlist",
+          "volume_final": "Volume final",
+          "radiateur": "Radiateur",
+          "prechauffe_min": "Pré-chauffage (min)",
+          "cafetiere": "Cafetière",
+          "volets": "Volets",
+          "notification_activee": "Notification",
+          "notify_device": "Service notification",
+          "notif_titre": "Titre notification",
+          "notif_message": "Message notification",
+          "snooze_duree": "Snooze (min)",
+          "snooze_max": "Max snooze",
+          "escalade_min": "Escalade (min)",
+          "brightness_max": "Luminosité max",
+          "duree_progressive": "Durée éclairage (min)",
+          "aube_min": "Aube (min)",
+          "ponctuel": "Ponctuel",
+          "skip_prochain": "Sauter prochain",
+          "mode_vacances": "Mode vacances",
+          "ignorer_feries": "Ignorer fériés",
+          "presence": "Présence",
+          "workday_sensor": "Capteur fériés"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "Réveil progressif",
+  "content_in_root": false,
+  "render_readme": true,
+  "zip_release": true,
+  "filename": "reveil_progressif.zip",
+  "country": ["FR"],
+  "homeassistant": "2024.1.0"
+}

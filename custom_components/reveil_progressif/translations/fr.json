@@ -1,0 +1,65 @@
+{
+  "title": "Réveil progressif",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Créer un réveil",
+        "description": "Configurez votre réveil progressif. Donnez-lui un nom, une heure, et choisissez les options.",
+        "data": {
+          "name": "Nom du réveil",
+          "heure": "Heure du réveil",
+          "jours": "Jours actifs",
+          "lumiere_activee": "Activer la lumière progressive",
+          "lumiere": "Lumière à allumer progressivement",
+          "musique_activee": "Activer la musique",
+          "media_player": "Lecteur de musique",
+          "playlist": "ID de la playlist Spotify",
+          "volume": "Volume de la musique",
+          "radiateur": "Radiateur (optionnel)",
+          "notification_activee": "Activer la notification de rappel",
+          "notify_device": "Service de notification mobile",
+          "withings_bed_1": "Capteur de lit 1 (Withings)",
+          "withings_bed_2": "Capteur de lit 2 (Withings)",
+          "brightness_max": "Luminosité maximale (1-255)",
+          "duree_progressive": "Durée de l'éclairage progressif (min)"
+        }
+      }
+    },
+    "error": {
+      "media_required": "Sélectionnez un lecteur de musique si la musique est activée",
+      "light_required": "Sélectionnez une lumière si la lumière progressive est activée"
+    },
+    "abort": {
+      "already_configured": "Un réveil avec ce nom existe déjà"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Modifier le réveil",
+        "description": "Ajustez les paramètres de votre réveil.",
+        "data": {
+          "heure": "Heure du réveil",
+          "jours": "Jours actifs",
+          "lumiere_activee": "Activer la lumière progressive",
+          "lumiere": "Lumière à allumer progressivement",
+          "musique_activee": "Activer la musique",
+          "media_player": "Lecteur de musique",
+          "playlist": "ID de la playlist Spotify",
+          "volume": "Volume de la musique",
+          "radiateur": "Radiateur (optionnel)",
+          "notification_activee": "Activer la notification de rappel",
+          "notify_device": "Service de notification mobile",
+          "withings_bed_1": "Capteur de lit 1 (Withings)",
+          "withings_bed_2": "Capteur de lit 2 (Withings)",
+          "brightness_max": "Luminosité maximale (1-255)",
+          "duree_progressive": "Durée de l'éclairage progressif (min)"
+        }
+      }
+    },
+    "error": {
+      "media_required": "Sélectionnez un lecteur de musique si la musique est activée",
+      "light_required": "Sélectionnez une lumière si la lumière progressive est activée"
+    }
+  }
+}
