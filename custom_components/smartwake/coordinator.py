@@ -85,10 +85,12 @@ from .const import (
     CONF_SNOOZE_MAX,
     CONF_TTS_ACTIVEE,
     CONF_TTS_ENTITY,
+    CONF_TTS_MESSAGE,
     CONF_VOLUME_DUREE,
     CONF_VOLUME_FINAL,
     CONF_VOLUME_INITIAL,
     CONF_VOLETS,
+    CONF_VOLETS_POSITION,
     CONF_VOLETS_SOLEIL,
     CONF_WITHINGS_BED_1,
     CONF_WITHINGS_BED_2,
@@ -100,6 +102,7 @@ from .const import (
     DEFAULT_ESCALADE_MIN,
     DEFAULT_NOTIF_MESSAGE,
     DEFAULT_NOTIF_TITRE,
+    DEFAULT_TTS_MESSAGE,
     DEFAULT_PRECHAUFFE_MIN,
     DEFAULT_SNOOZE_DUREE,
     DEFAULT_SNOOZE_MAX,
@@ -986,8 +989,12 @@ class ReveilCoordinator(DataUpdateCoordinator):
 
         for attempt in range(2):
             try:
-                await self.hass.services.async_call("cover", "open_cover", {"entity_id": volets})
-                _LOGGER.info("Volets ouverts: %s", volets)
+                position = cfg.get(CONF_VOLETS_POSITION, 100)
+                if position >= 100:
+                    await self.hass.services.async_call("cover", "open_cover", {"entity_id": volets})
+                else:
+                    await self.hass.services.async_call("cover", "set_cover_position", {"entity_id": volets, "position": position})
+                _LOGGER.info("Volets ouverts (%d%%): %s", position, volets)
                 return
             except Exception as exc:
                 _LOGGER.warning("Tentative volets %d/2 échouée: %s", attempt + 1, exc)
@@ -1300,15 +1307,16 @@ class ReveilCoordinator(DataUpdateCoordinator):
         _LOGGER.info("Réveil '%s' arrêté", self.entry.title)
 
     async def _tts_briefing(self) -> None:
-        """Briefing vocal basique (fallback) : météo, agenda."""
+        """Briefing vocal basique (fallback) : utilise le message configuré + météo."""
         cfg = self.entry.data
         tts_entity = cfg[CONF_TTS_ENTITY]
         try:
-            meteo = self.hass.states.get("weather.home")
+            tts_msg = cfg.get(CONF_TTS_MESSAGE, DEFAULT_TTS_MESSAGE)
+            meteo = self.hass.states.get(cfg.get(CONF_WEATHER_ENTITY, "weather.home"))
             meteo_str = ""
             if meteo:
                 meteo_str = f"Météo: {meteo.state}, {meteo.attributes.get('temperature', '?')}°C. "
-            message = f"Bonjour. {meteo_str}Bonne journée !"
+            message = f"{tts_msg} {meteo_str}"
             await self._tts_speak(message)
         except Exception as exc:
             _LOGGER.error("Erreur TTS: %s", exc)
