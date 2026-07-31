@@ -178,31 +178,31 @@
         }
       },
       "ai": {
-        "title": "🤖 AI Task",
-        "description": "Fonctionnalités IA — requiert HA ≥ 2025.8 + AI Task configuré (Ollama local, Anthropic, Google ou OpenAI).\n\n⚠️ L'entité AI Task ne doit pas avoir accès aux services HA (permissions minimales).\n\nL'IA ne déclenche jamais la sonnerie. Fallback automatique si indisponible.",
+        "title": "🤖 AI Task (optionnel)",
+        "description": "## Fonctionnalités IA\n\nSmartWAKE peut utiliser l'IA de HA pour rendre votre réveil plus intelligent. **Tout est optionnel** — le réveil fonctionne sans IA.\n\n### Prérequis\n1. HA ≥ 2025.8\n2. Une intégration AI Task configurée : **Paramètres → Système → AI Task**\n3. Choisissez un fournisseur : **Ollama** (local, gratuit) ou **Anthropic / Google / OpenAI** (cloud)\n\n### Comment ça marche\n- Vous n'avez **pas** à créer de prompts — SmartWAKE génère les prompts automatiquement\n- Vous n'avez **pas** à créer plusieurs tasks — une seule entité AI Task suffit pour toutes les fonctions\n- L'IA **ne déclenche jamais** la sonnerie — elle propose, vous validez\n- Si l'IA est indisponible, le réveil fonctionne normalement (fallback automatique)\n\n### Sécurité\n⚠️ L'entité AI Task ne doit **pas** avoir accès aux services HA (permissions minimales) pour éviter toute injection de prompt.",
         "data": {
-          "ai_briefing": "Briefing matinal IA",
-          "ai_task_entity": "Entité AI Task",
+          "ai_briefing": "Briefing matinal généré par IA",
+          "ai_task_entity": "Entité AI Task (une seule pour tout)",
           "ai_musique_adapt": "Musique adaptative IA",
           "ai_suggestion_heure": "Suggestion d'heure du soir",
           "ai_bilan_hebdo": "Bilan sommeil hebdomadaire",
           "ai_verif_lever": "Vérif lever caméra+IA",
           "ai_camera_verif": "Caméra chambre",
-          "weather_entity": "Météo",
-          "trajet_sensor": "Capteur trajet",
-          "batterie_sensor": "Capteur batterie"
+          "weather_entity": "Météo (pour le briefing IA)",
+          "trajet_sensor": "Capteur trajet (pour le briefing IA)",
+          "batterie_sensor": "Capteur batterie (pour le briefing IA)"
         },
         "data_description": {
-          "ai_briefing": "Si activé, l'IA rédige un briefing naturel (météo + agenda + trajet + batterie) au lieu d'un TTS robotique. Récupéré au moment du Stop.",
-          "ai_task_entity": "L'entité AI Task à utiliser (configurée dans Paramètres → Système → AI Task).",
-          "ai_musique_adapt": "Si activé, l'IA choisit la playlist selon la météo (pluie = doux, beau temps = énergique).",
-          "ai_suggestion_heure": "Si activé, chaque soir à 21:30 l'IA propose une heure de réveil optimale. Notification avec boutons Accepter/Refuser.",
-          "ai_bilan_hebdo": "Si activé, générez un bilan de sommeil hebdomadaire via le service smartwake.bilan_hebdo. L'IA synthétise la semaine + recommandations.",
-          "ai_verif_lever": "Si activé, 10 min après le Stop l'IA analyse une image de la chambre. Si vous êtes encore au lit → escalade.",
-          "ai_camera_verif": "La caméra de chambre utilisée pour la vérification du lever par IA.",
-          "weather_entity": "L'entité météo (ex : weather.home) utilisée par l'IA pour le briefing et le choix musical.",
-          "trajet_sensor": "Capteur de temps de trajet (ex : sensor.trajet_travail) utilisé dans le briefing IA.",
-          "batterie_sensor": "Capteur de batterie du téléphone (ex : sensor.mon_tel_battery_level) utilisé dans le briefing IA."
+          "ai_briefing": "**Recommandé** — Au moment du Stop, l'IA rédige un briefing naturel (météo, premier RDV de l'agenda, temps de trajet, batterie du téléphone) et le lit via TTS. Remplace le TTS robotique basique. Cochez + sélectionnez l'entité AI Task ci-dessous.",
+          "ai_task_entity": "Sélectionnez votre entité AI Task (configurée dans Paramètres → Système → AI Task). **Une seule entité suffit** pour toutes les fonctions IA. Si vide, les fonctions IA sont désactivées.",
+          "ai_musique_adapt": "Au déclenchement, l'IA choisit la playlist selon la météo (pluie = jazz doux, beau temps = énergique). Cochez si vous voulez que l'IA choisisse la musique du jour.",
+          "ai_suggestion_heure": "Chaque soir à 21:30, l'IA analyse votre agenda et propose une heure de réveil optimale. Vous recevez une notification avec boutons **Accepter** / **Refuser**. L'IA propose, vous décidez.",
+          "ai_bilan_hebdo": "Active le service `smartwake.bilan_hebdo` — à appeler via automation le dimanche. L'IA synthétise votre semaine (snoozes, heures de lever) et envoie des recommandations par notification.",
+          "ai_verif_lever": "10 min après le Stop, l'IA prend une photo de la chambre et vérifie si vous êtes levé. Si vous vous êtes rendormi → escalade immédiate. ⚠️ Caméra en chambre = question de vie privée.",
+          "ai_camera_verif": "La caméra utilisée pour la vérification du lever. Ne remplissez que si vous avez activé « Vérif lever » ci-dessus.",
+          "weather_entity": "L'entité météo utilisée par l'IA pour le briefing et le choix musical. Ex : `weather.home` ou `weather.maison`.",
+          "trajet_sensor": "Capteur de temps de trajet (ex : `sensor.waze_trajet_travail`) mentionné dans le briefing IA. Optionnel.",
+          "batterie_sensor": "Capteur de batterie de votre téléphone (ex : `sensor.mon_tel_battery_level`) mentionné dans le briefing IA. Optionnel."
         }
       }
     }
