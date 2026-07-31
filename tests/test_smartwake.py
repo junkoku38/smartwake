@@ -1596,3 +1596,124 @@ async def test_migration_purge_la_phase_de_sommeil(coordinator):
     assert "sommeil_fenetre_min" not in entry.data
     assert entry.data["heure"] == "07:00"
     assert entry.version == SCHEMA_VERSION
+
+
+# ── Auto-détection : aucun choix arbitraire ────────────────────
+
+def _faux_hass_avec(etats):
+    """Construit un hass minimal exposant les états fournis."""
+    class _Etat:
+        def __init__(self, entity_id, attributes=None):
+            self.entity_id = entity_id
+            self.state = "off"
+            self.attributes = attributes or {}
+
+    class _States:
+        def __init__(self, liste):
+            self._liste = liste
+
+        def async_entity_ids(self, domain):
+            return [e.entity_id for e in self._liste
+                    if e.entity_id.startswith(domain + ".")]
+
+        def async_all(self):
+            return self._liste
+
+        def get(self, entity_id):
+            return next((e for e in self._liste if e.entity_id == entity_id), None)
+
+    class _Hass:
+        def __init__(self, liste):
+            self.states = _States(liste)
+
+    return _Hass([_Etat(e, a) for e, a in etats])
+
+
+@pytest.mark.asyncio
+async def test_auto_detection_ignore_garage_et_portail():
+    """Régression : l'auto-détection retenait le premier `cover` de la maison à
+    défaut de mieux. Une porte de garage ou un portail pouvait donc être
+    pré-rempli dans « Volets à ouvrir » et s'ouvrir au réveil."""
+    from custom_components.smartwake.config_flow import _auto_detect_entities
+
+    hass = _faux_hass_avec([
+        ("cover.porte_garage", {"device_class": "garage"}),
+        ("cover.portail", {"device_class": "gate"}),
+    ])
+    detecte = await _auto_detect_entities(hass)
+    assert detecte.get("volets") is None, (
+        f"un ouvrant interdit a été proposé : {detecte.get('volets')}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_auto_detection_ignore_portail_sans_device_class():
+    """Sans device_class, le nom doit suffire à écarter un portail."""
+    from custom_components.smartwake.config_flow import _auto_detect_entities
+
+    hass = _faux_hass_avec([("cover.portail_entree", {})])
+    assert (await _auto_detect_entities(hass)).get("volets") is None
+
+
+@pytest.mark.asyncio
+async def test_auto_detection_retient_le_volet_de_chambre():
+    """Un volet de chambre identifiable doit être proposé, le garage écarté."""
+    from custom_components.smartwake.config_flow import _auto_detect_entities
+
+    hass = _faux_hass_avec([
+        ("cover.porte_garage", {"device_class": "garage"}),
+        ("cover.volet_chambre", {"device_class": "shutter"}),
+        ("light.chambre", {}),
+        ("light.salon", {}),
+    ])
+    detecte = await _auto_detect_entities(hass)
+    assert detecte["volets"] == "cover.volet_chambre"
+    assert detecte["lumiere"] == "light.chambre"
+
+
+@pytest.mark.asyncio
+async def test_auto_detection_s_abstient_si_ambigu():
+    """Plusieurs candidats équivalents : le champ doit rester vide plutôt que
+    de désigner arbitrairement une pièce."""
+    from custom_components.smartwake.config_flow import _auto_detect_entities
+
+    hass = _faux_hass_avec([
+        ("cover.volet_salon", {"device_class": "shutter"}),
+        ("cover.volet_cuisine", {"device_class": "shutter"}),
+        ("light.salon", {}),
+        ("light.cuisine", {}),
+        ("media_player.tv_salon", {}),
+        ("media_player.enceinte_cuisine", {}),
+        ("person.paul", {}),
+        ("person.marie", {}),
+    ])
+    detecte = await _auto_detect_entities(hass)
+    for cle in ("volets", "lumiere", "media_player", "presence"):
+        assert detecte.get(cle) is None, f"{cle} pré-rempli arbitrairement"
+
+
+@pytest.mark.asyncio
+async def test_auto_detection_accepte_un_candidat_unique():
+    """Sans ambiguïté possible, la proposition reste utile."""
+    from custom_components.smartwake.config_flow import _auto_detect_entities
+
+    hass = _faux_hass_avec([
+        ("cover.volet", {"device_class": "shutter"}),
+        ("light.plafonnier", {}),
+        ("person.paul", {}),
+    ])
+    detecte = await _auto_detect_entities(hass)
+    assert detecte["volets"] == "cover.volet"
+    assert detecte["lumiere"] == "light.plafonnier"
+    assert detecte["presence"] == "person.paul"
+
+
+def test_presets_sans_entite_codee_en_dur():
+    """Les presets ne doivent contenir aucun identifiant d'entité : ils
+    réintroduiraient une valeur que l'auto-détection s'est refusée à choisir."""
+    from custom_components.smartwake.config_flow import PRESETS
+
+    for nom, preset in PRESETS.items():
+        fautifs = {k: v for k, v in preset.items()
+                   if isinstance(v, str) and "." in v and " " not in v}
+        assert not fautifs, f"preset '{nom}' contient des entités : {fautifs}"

@@ -164,6 +164,17 @@ entité. Pour un réveil nommé `reveil` :
 - « Pas de réveil demain » → `smartwake_skip`
 - « Quand sonne le prochain réveil ? » → `smartwake_status`
 
+## Auto-détection à la création
+
+L'assistant ne pré-remplit une entité que si le choix est **sans ambiguïté** :
+un nom explicite mentionnant la chambre, ou un unique candidat dans la maison.
+Dans le doute, le champ reste vide.
+
+Les volets font l'objet d'un filtrage supplémentaire : les `device_class`
+`garage`, `gate`, `door` et `damper` sont exclues, de même que les entités dont
+le nom évoque un garage, un portail ou une porte. Une valeur fausse agissant sur
+la maison est plus gênante qu'un champ à remplir soi-même.
+
 ## Installation
 
 ### Via HACS (recommandé)

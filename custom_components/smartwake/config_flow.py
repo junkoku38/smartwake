@@ -205,51 +205,86 @@ STEP_USER_SCHEMA = vol.Schema(
 
 
 async def _auto_detect_entities(hass: HomeAssistant) -> dict[str, str | None]:
-    """Détecte automatiquement les entités pertinentes dans HA."""
-    detected = {}
+    """Pré-remplit les entités dont l'identification est certaine.
 
-    def _entities(domain: str) -> list[str]:
+    L'ancienne version retenait le premier candidat de chaque domaine à défaut
+    de mieux : le premier `cover` de la maison pouvait donc être une porte de
+    garage ou un portail, ouverts au réveil. Même logique pour la lumière, le
+    radiateur ou l'enceinte, susceptibles d'appartenir à une autre pièce.
+
+    Principe retenu : on ne propose une entité que si le choix est sans
+    ambiguïté — un nom explicite, ou un unique candidat. Dans le doute, le champ
+    reste vide, ce qui est préférable à une valeur fausse qui agit sur la maison.
+    """
+    detected: dict[str, str | None] = {}
+
+    def _etats(domain: str) -> list:
         try:
-            return list(hass.states.async_entity_ids(domain))
+            ids = list(hass.states.async_entity_ids(domain))
+            return [hass.states.get(e) for e in ids if hass.states.get(e)]
         except Exception:
             try:
-                return [s.entity_id for s in hass.states.async_all() if s.entity_id.startswith(domain + ".")]
+                return [
+                    s for s in hass.states.async_all()
+                    if s.entity_id.startswith(domain + ".")
+                ]
             except Exception:
                 return []
 
-    # Première lumière de la chambre
-    lights = [e for e in _entities("light") if "chambre" in e or "bedroom" in e]
-    all_lights = _entities("light")
-    detected[CONF_LUMIERE] = lights[0] if lights else (all_lights[0] if all_lights else None)
+    def _chambre(etat) -> bool:
+        """Vrai si l'entité semble se rapporter à la chambre."""
+        texte = f"{etat.entity_id} {etat.attributes.get('friendly_name', '')}".lower()
+        return any(mot in texte for mot in ("chambre", "bedroom", "slaapkamer"))
 
-    # Premier media player
-    players = _entities("media_player")
-    detected[CONF_MEDIA_PLAYER] = players[0] if players else None
+    def _choisir(etats: list, prefere=None) -> str | None:
+        """Retient l'entité de la chambre, sinon l'unique candidat."""
+        if prefere:
+            etats = [e for e in etats if prefere(e)]
+        if not etats:
+            return None
+        cibles = [e for e in etats if _chambre(e)]
+        if len(cibles) == 1:
+            return cibles[0].entity_id
+        if cibles:
+            return None  # plusieurs entités de chambre : à l'utilisateur de trancher
+        return etats[0].entity_id if len(etats) == 1 else None
 
-    # Premier climate
-    climates = _entities("climate")
-    detected[CONF_RADIATEUR] = climates[0] if climates else None
+    detected[CONF_LUMIERE] = _choisir(_etats("light"))
+    detected[CONF_MEDIA_PLAYER] = _choisir(_etats("media_player"))
+    detected[CONF_RADIATEUR] = _choisir(_etats("climate"))
 
-    # Premier cover
-    covers = [e for e in _entities("cover") if "volet" in e or "shutter" in e or "blind" in e]
-    all_covers = _entities("cover")
-    detected[CONF_VOLETS] = covers[0] if covers else (all_covers[0] if all_covers else None)
+    # Volets : jamais de garage, de portail ni de porte. On exige une classe
+    # d'ouvrant compatible ou un nom explicite.
+    OUVRANTS = ("shutter", "blind", "curtain", "shade", "awning", "window")
+    INTERDITS = ("garage", "gate", "door", "damper")
 
-    # Workday sensor
-    workdays = [e for e in _entities("binary_sensor") if "workday" in e]
-    detected[CONF_WORKDAY_SENSOR] = workdays[0] if workdays else None
+    def _est_volet(etat) -> bool:
+        classe = (etat.attributes.get("device_class") or "").lower()
+        if classe in INTERDITS:
+            return False
+        if classe in OUVRANTS:
+            return True
+        if classe:
+            return False
+        texte = f"{etat.entity_id} {etat.attributes.get('friendly_name', '')}".lower()
+        if any(mot in texte for mot in ("garage", "portail", "porte", "gate")):
+            return False
+        return any(mot in texte for mot in ("volet", "shutter", "blind", "store", "rideau"))
 
-    # Person
-    persons = _entities("person")
-    detected[CONF_PRESENCE] = persons[0] if persons else None
+    detected[CONF_VOLETS] = _choisir(_etats("cover"), _est_volet)
 
-    # Weather
-    weathers = _entities("weather")
-    detected[CONF_WEATHER_ENTITY] = weathers[0] if weathers else None
+    # Entités de lecture seule : aucun risque d'action indésirable
+    workdays = [e for e in _etats("binary_sensor") if "workday" in e.entity_id]
+    detected[CONF_WORKDAY_SENSOR] = workdays[0].entity_id if len(workdays) == 1 else None
 
-    # Notify
-    notifies = [e for e in _entities("notify") if "mobile_app" in e]
-    detected[CONF_NOTIFY_DEVICE] = notifies[0] if notifies else DEFAULT_NOTIFY_DEVICE
+    personnes = _etats("person")
+    detected[CONF_PRESENCE] = personnes[0].entity_id if len(personnes) == 1 else None
+
+    meteos = _etats("weather")
+    detected[CONF_WEATHER_ENTITY] = meteos[0].entity_id if len(meteos) == 1 else None
+
+    notifies = [e for e in _etats("notify") if "mobile_app" in e.entity_id]
+    detected[CONF_NOTIFY_DEVICE] = notifies[0].entity_id if len(notifies) == 1 else None
 
     return detected
 
