@@ -9,7 +9,7 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import ATTR_ENTITY_ID, Platform
 from homeassistant.core import HomeAssistant, ServiceCall, callback
-from homeassistant.helpers import config_validation as cv, device_registry as dr
+from homeassistant.helpers import config_validation as cv, device_registry as dr, entity_registry as er
 
 from .const import (
     DOMAIN,
@@ -34,7 +34,7 @@ def _get_coordinator(hass: HomeAssistant, entity_id: str) -> ReveilCoordinator |
     Cherche le coordinator dont l'entity_id du switch correspond exactement.
     Évite les collisions de sous-chaîne entre réveils aux noms similaires.
     """
-    registry = hass.helpers.entity_registry.async_get(hass)
+    registry = er.async_get(hass)
     entry = registry.async_get(entity_id)
     if entry is None:
         return None
@@ -87,9 +87,12 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     hass.services.async_register(DOMAIN, SERVICE_RESET, _handle_reset, schema=SERVICE_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_BILAN_HEBDO, _handle_bilan_hebdo, schema=SERVICE_SCHEMA)
 
-    # Enregistrer les tools Assist (LLM Tool Calling)
-    from .assist import async_setup_assist_tools
-    await async_setup_assist_tools(hass)
+    # Enregistrer les tools Assist (LLM Tool Calling) — non bloquant
+    try:
+        from .assist import async_setup_assist_tools
+        await async_setup_assist_tools(hass)
+    except Exception as exc:
+        _LOGGER.debug("Assist tools non disponibles: %s", exc)
 
     return True
 

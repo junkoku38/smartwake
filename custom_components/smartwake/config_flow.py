@@ -191,39 +191,49 @@ STEP_USER_SCHEMA = vol.Schema(
 
 async def _auto_detect_entities(hass: HomeAssistant) -> dict[str, str | None]:
     """Détecte automatiquement les entités pertinentes dans HA."""
-    entities = hass.states.async_entity_ids
     detected = {}
 
+    def _entities(domain: str) -> list[str]:
+        try:
+            return list(hass.states.async_entity_ids(domain))
+        except Exception:
+            try:
+                return [s.entity_id for s in hass.states.async_all() if s.entity_id.startswith(domain + ".")]
+            except Exception:
+                return []
+
     # Première lumière de la chambre
-    lights = [e for e in entities("light") if "chambre" in e or "bedroom" in e]
-    detected[CONF_LUMIERE] = lights[0] if lights else (entities("light")[0] if entities("light") else None)
+    lights = [e for e in _entities("light") if "chambre" in e or "bedroom" in e]
+    all_lights = _entities("light")
+    detected[CONF_LUMIERE] = lights[0] if lights else (all_lights[0] if all_lights else None)
 
     # Premier media player
-    players = list(entities("media_player"))
+    players = _entities("media_player")
     detected[CONF_MEDIA_PLAYER] = players[0] if players else None
 
     # Premier climate
-    climates = list(entities("climate"))
+    climates = _entities("climate")
     detected[CONF_RADIATEUR] = climates[0] if climates else None
 
     # Premier cover
-    covers = [e for e in entities("cover") if "volet" in e or "shutter" in e or "blind" in e]
-    detected[CONF_VOLETS] = covers[0] if covers else (entities("cover")[0] if entities("cover") else None)
+    covers = [e for e in _entities("cover") if "volet" in e or "shutter" in e or "blind" in e]
+    all_covers = _entities("cover")
+    detected[CONF_VOLETS] = covers[0] if covers else (all_covers[0] if all_covers else None)
 
     # Workday sensor
-    workdays = [e for e in entities("binary_sensor") if "workday" in e]
+    workdays = [e for e in _entities("binary_sensor") if "workday" in e]
     detected[CONF_WORKDAY_SENSOR] = workdays[0] if workdays else None
 
     # Person
-    persons = list(entities("person"))
+    persons = _entities("person")
     detected[CONF_PRESENCE] = persons[0] if persons else None
 
     # Weather
-    weathers = list(entities("weather"))
+    weathers = _entities("weather")
     detected[CONF_WEATHER_ENTITY] = weathers[0] if weathers else None
 
     # Notify
-    notifies = [e for e in entities("notify") if "mobile_app" in e]
+    notifies = [e for e in _entities("notify") if "mobile_app" in e]
     detected[CONF_NOTIFY_DEVICE] = notifies[0] if notifies else DEFAULT_NOTIFY_DEVICE
 
     return detected
