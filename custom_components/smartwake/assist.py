@@ -119,11 +119,14 @@ async def async_setup_assist_tools(hass: HomeAssistant) -> None:
                 "skip_prochain": coord.skip_prochain,
             }
 
-    llm_helper.async_register_tool(SmartWAKESetTimeTool)
-    llm_helper.async_register_tool(SmartWAKEActivateTool)
-    llm_helper.async_register_tool(SmartWAKESkipTool)
-    llm_helper.async_register_tool(SmartWAKEStatusTool)
-    _LOGGER.info("SmartWAKE Assist tools enregistrés")
+    try:
+        llm_helper.async_register_tool(SmartWAKESetTimeTool)
+        llm_helper.async_register_tool(SmartWAKEActivateTool)
+        llm_helper.async_register_tool(SmartWAKESkipTool)
+        llm_helper.async_register_tool(SmartWAKEStatusTool)
+        _LOGGER.info("SmartWAKE Assist tools enregistrés")
+    except Exception as exc:
+        _LOGGER.debug("Impossible d'enregistrer les Assist tools: %s", exc)
 
 
 def _find_coordinator(hass: HomeAssistant, name: str) -> ReveilCoordinator | None:
