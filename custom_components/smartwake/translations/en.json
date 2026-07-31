@@ -1,33 +1,112 @@
 {
-  "title": "Progressive alarm",
+  "title": "SmartWAKE",
   "config": {
     "step": {
       "user": {
-        "title": "Create an alarm",
-        "description": "Configure your progressive alarm. Give it a name, a time, and choose options.",
+        "title": "⏰ Step 1/7 — Base",
+        "description": "Welcome to SmartWAKE!\n\nGive your alarm a name (e.g. \"Weekday\", \"Gym\", \"Kids\"), choose the wake time and active days.\n\nYou can create multiple independent alarms — one for each need.",
         "data": {
-          "name": "Alarm name",
-          "heure": "Alarm time",
+          "name": "Alarm name (unique)",
+          "heure": "Wake time",
           "jours": "Active days",
+          "jours_perso": "Custom days (select if Custom mode)",
+          "ponctuel": "One-time alarm (auto-disable after trigger)",
+          "skip_prochain": "Skip next alarm (one time only)",
+          "mode_vacances": "Vacation mode (suspends this alarm)"
+        }
+      },
+      "lumiere": {
+        "title": "💡 Step 2/7 — Light & dawn",
+        "description": "SmartWAKE simulates a sunrise for a gentle wake-up.\n\nBrightness increases progressively over 5-60 min, up to the maximum. The dawn simulation starts before the wake time.",
+        "data": {
           "lumiere_activee": "Enable progressive light",
           "lumiere": "Light to turn on progressively",
+          "brightness_max": "Maximum brightness (1-255)",
+          "duree_progressive": "Progressive lighting duration (min)",
+          "aube_min": "Start dawn before wake time (min)"
+        }
+      },
+      "musique": {
+        "title": "🎵 Step 3/7 — Music",
+        "description": "SmartWAKE starts music at wake time with a progressive volume.\n\nThe volume increases gently from 'initial' to 'final' over the configured duration. You can use a Spotify playlist, radio URL or local file.",
+        "data": {
           "musique_activee": "Enable music",
-          "media_player": "Media player",
-          "playlist": "Spotify playlist ID",
-          "volume": "Music volume",
-          "radiateur": "Heater (optional)",
-          "notification_activee": "Enable reminder notification",
-          "notify_device": "Mobile notification service",
-          "withings_bed_1": "Bed sensor 1 (Withings)",
-          "withings_bed_2": "Bed sensor 2 (Withings)",
-          "brightness_max": "Max brightness (1-255)",
-          "duree_progressive": "Progressive light duration (min)"
+          "media_player": "Music player (Sonos, Cast, Squeezebox...)",
+          "playlist": "Playlist ID / radio URL",
+          "volume_initial": "Initial volume (gentle)",
+          "volume_final": "Final volume",
+          "volume_duree": "Volume ramp duration (min)"
+        }
+      },
+      "confort": {
+        "title": "🏠 Step 4/7 — Comfort",
+        "description": "Your home prepares before you wake up.\n\nHeating switches to comfort mode, hot water starts, coffee maker turns on, and blinds open if the sun is up.",
+        "data": {
+          "prechauffe_min": "Pre-heat before wake time (min)",
+          "radiateur": "Radiator / thermostat (climate entity)",
+          "chauffe_eau": "Water heater / towel rail (switch entity)",
+          "cafetiere": "Coffee maker / kettle (switch entity)",
+          "cafetiere_min": "Coffee before wake time (min)",
+          "volets": "Blinds to open (cover entity)",
+          "volets_soleil": "Open blinds only if the sun is up"
+        }
+      },
+      "intelligence": {
+        "title": "🧠 Step 5/7 — Contextual intelligence",
+        "description": "SmartWAKE adapts to your context.\n\n— Won't ring if you're away\n— Ignores public holidays (via workday sensor)\n— Detects if you're in bed (Withings)\n— Stops if you're already up (kitchen motion)\n— Aligns with your calendar (1st event − margin)\n— Wakes you in light sleep phase (±N min window)",
+        "data": {
+          "presence": "Presence entity (person)",
+          "workday_sensor": "Public holiday sensor (binary_sensor workday)",
+          "ignorer_feries": "Ignore public holidays",
+          "withings_bed_1": "Bed sensor 1 (Withings — in bed)",
+          "withings_bed_2": "Bed sensor 2 (Withings — 2nd person)",
+          "mouvement_sdb": "Bathroom motion sensor",
+          "mouvement_stop": "Stop alarm on bathroom motion (= up)",
+          "lever_anticippe": "Cancel if early wake-up (kitchen motion before wake time)",
+          "mouvement_cuisine": "Kitchen motion sensor",
+          "adaptatif_agenda": "Adaptive alarm (align with 1st calendar event)",
+          "agenda_entity": "Calendar (Google/CalDAV entity)",
+          "agenda_marge_min": "Margin before event (min)",
+          "sommeil_phase": "Wake in light sleep phase (±N min window)",
+          "sommeil_fenetre_min": "Wake window (min around target time)"
+        }
+      },
+      "notification": {
+        "title": "📱 Step 6/7 — Notification & controls",
+        "description": "Get an actionable notification with Snooze / Stop buttons, and a voice briefing when you get up.\n\nIf you don't respond, SmartWAKE escalates: max volume + all lights to 100%.",
+        "data": {
+          "notification_activee": "Enable mobile notification (Snooze / Stop)",
+          "notify_device": "Mobile notification service (e.g. notify.mobile_app_my_phone)",
+          "notif_titre": "Notification title",
+          "notif_message": "Notification message",
+          "tts_activee": "Enable voice briefing on Stop",
+          "tts_entity": "TTS entity (media_player for voice)",
+          "snooze_duree": "Snooze duration (min)",
+          "snooze_max": "Max snooze count",
+          "escalade_min": "Escalate if no Stop after (min)"
+        }
+      },
+      "ai": {
+        "title": "🤖 Step 7/7 — AI Task (optional)",
+        "description": "AI features — requires HA ≥ 2025.8 and an AI Task integration configured (local Ollama, Anthropic, Google or OpenAI).\n\n— Natural morning briefing generated by AI\n— Adaptive music based on context\n— Wake time suggestion every evening\n— Weekly sleep report\n— Camera-based get-up verification\n\nAI never triggers the alarm itself. Automatic fallback if unavailable.",
+        "data": {
+          "ai_briefing": "AI-generated morning briefing (weather + agenda + commute)",
+          "ai_task_entity": "AI Task entity (preferred)",
+          "ai_musique_adapt": "Adaptive AI music (choice based on weather)",
+          "ai_suggestion_heure": "Evening wake time suggestion (Accept/Decline notification)",
+          "ai_bilan_hebdo": "Weekly sleep report (service smartwake.bilan_hebdo)",
+          "ai_verif_lever": "Camera+AI get-up verification (10 min after Stop)",
+          "ai_camera_verif": "Verification camera (bedroom)",
+          "weather_entity": "Weather entity (e.g. weather.home)",
+          "trajet_sensor": "Commute time sensor",
+          "batterie_sensor": "Phone battery sensor"
         }
       }
     },
     "error": {
-      "media_required": "Select a media player if music is enabled",
-      "light_required": "Select a light if progressive light is enabled"
+      "media_required": "Select a music player if music is enabled",
+      "light_required": "Select a light if progressive light is enabled",
+      "jours_perso_required": "Select at least one day if Custom mode"
     },
     "abort": {
       "already_configured": "An alarm with this name already exists"
@@ -37,29 +116,38 @@
     "step": {
       "init": {
         "title": "Edit alarm",
-        "description": "Adjust your alarm settings.",
+        "description": "Adjust your alarm settings. All fields are editable.",
         "data": {
-          "heure": "Alarm time",
+          "heure": "Wake time",
           "jours": "Active days",
           "lumiere_activee": "Enable progressive light",
-          "lumiere": "Light to turn on progressively",
+          "lumiere": "Light",
           "musique_activee": "Enable music",
-          "media_player": "Media player",
-          "playlist": "Spotify playlist ID",
-          "volume": "Music volume",
-          "radiateur": "Heater (optional)",
-          "notification_activee": "Enable reminder notification",
-          "notify_device": "Mobile notification service",
-          "withings_bed_1": "Bed sensor 1 (Withings)",
-          "withings_bed_2": "Bed sensor 2 (Withings)",
+          "media_player": "Music player",
+          "playlist": "Playlist / radio URL",
+          "volume_final": "Final volume",
+          "radiateur": "Radiator / thermostat",
+          "prechauffe_min": "Pre-heat before (min)",
+          "cafetiere": "Coffee maker",
+          "volets": "Blinds",
+          "notification_activee": "Mobile notification",
+          "notify_device": "Notification service",
+          "notif_titre": "Notification title",
+          "notif_message": "Notification message",
+          "snooze_duree": "Snooze duration (min)",
+          "snooze_max": "Max snooze",
+          "escalade_min": "Escalate after (min)",
           "brightness_max": "Max brightness (1-255)",
-          "duree_progressive": "Progressive light duration (min)"
+          "duree_progressive": "Lighting duration (min)",
+          "aube_min": "Dawn before wake time (min)",
+          "ponctuel": "One-time alarm",
+          "skip_prochain": "Skip next alarm",
+          "mode_vacances": "Vacation mode",
+          "ignorer_feries": "Ignore public holidays",
+          "presence": "Presence (person)",
+          "workday_sensor": "Public holiday sensor (workday)"
         }
       }
-    },
-    "error": {
-      "media_required": "Select a media player if music is enabled",
-      "light_required": "Select a light if progressive light is enabled"
     }
   }
 }

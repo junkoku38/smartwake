@@ -3,31 +3,110 @@
   "config": {
     "step": {
       "user": {
-        "title": "Créer un réveil",
-        "description": "Configurez votre réveil progressif. Donnez-lui un nom, une heure, et choisissez les options.",
+        "title": "⏰ Étape 1/7 — Base",
+        "description": "Bienvenue dans SmartWAKE !\n\nDonnez un nom à votre réveil (ex : « Semaine », « Sport », « Enfants »), choisissez l'heure de réveil et les jours actifs.\n\nVous pourrez créer plusieurs réveils indépendants — un pour chaque besoin.",
         "data": {
-          "name": "Nom du réveil",
-          "heure": "Heure du réveil",
+          "name": "Nom du réveil (unique)",
+          "heure": "Heure de réveil",
           "jours": "Jours actifs",
+          "jours_perso": "Jours personnalisés (sélectionner si mode Personnalisé)",
+          "ponctuel": "Réveil ponctuel (auto-désactivé après déclenchement)",
+          "skip_prochain": "Sauter le prochain réveil (une seule fois)",
+          "mode_vacances": "Mode vacances (suspend ce réveil indéfiniment)"
+        }
+      },
+      "lumiere": {
+        "title": "💡 Étape 2/7 — Lumière & aube",
+        "description": "SmartWAKE simule un lever de soleil pour un réveil en douceur.\n\nLa luminosité augmente progressivement sur 5 à 60 min, jusqu'à atteindre la luminosité maximale. La simulation d'aube démarre avant l'heure du réveil.",
+        "data": {
           "lumiere_activee": "Activer la lumière progressive",
           "lumiere": "Lumière à allumer progressivement",
-          "musique_activee": "Activer la musique",
-          "media_player": "Lecteur de musique",
-          "playlist": "ID de la playlist Spotify",
-          "volume": "Volume de la musique",
-          "radiateur": "Radiateur (optionnel)",
-          "notification_activee": "Activer la notification de rappel",
-          "notify_device": "Service de notification mobile",
-          "withings_bed_1": "Capteur de lit 1 (Withings)",
-          "withings_bed_2": "Capteur de lit 2 (Withings)",
           "brightness_max": "Luminosité maximale (1-255)",
-          "duree_progressive": "Durée de l'éclairage progressif (min)"
+          "duree_progressive": "Durée de l'éclairage progressif (min)",
+          "aube_min": "Démarrer l'aube avant l'heure H (min)"
+        }
+      },
+      "musique": {
+        "title": "🎵 Étape 3/7 — Musique",
+        "description": "SmartWAKE démarre la musique à l'heure du réveil avec un volume progressif.\n\nLe volume augmente doucement de « initial » à « final » sur la durée configurée. Vous pouvez utiliser une playlist Spotify, une radio ou un fichier local.",
+        "data": {
+          "musique_activee": "Activer la musique",
+          "media_player": "Lecteur de musique (Sonos, Cast, Squeezebox...)",
+          "playlist": "ID de la playlist / URL radio",
+          "volume_initial": "Volume initial (doux)",
+          "volume_final": "Volume final",
+          "volume_duree": "Durée de montée du volume (min)"
+        }
+      },
+      "confort": {
+        "title": "🏠 Étape 4/7 — Confort",
+        "description": "La maison se prépare avant votre réveil.\n\nLe chauffage passe en mode confort, l'eau chaude démarre, la cafetière s'allume et les volets s'ouvrent si le soleil est levé.",
+        "data": {
+          "prechauffe_min": "Pré-chauffage avant l'heure H (min)",
+          "radiateur": "Radiateur / thermostat (entity climate)",
+          "chauffe_eau": "Chauffe-eau / sèche-serviettes (entity switch)",
+          "cafetiere": "Cafetière / bouilloire (entity switch)",
+          "cafetiere_min": "Café avant l'heure H (min)",
+          "volets": "Volets à ouvrir (entity cover)",
+          "volets_soleil": "Ouvrir les volets seulement si le soleil est levé"
+        }
+      },
+      "intelligence": {
+        "title": "🧠 Étape 5/7 — Intelligence contextuelle",
+        "description": "SmartWAKE s'adapte à votre contexte.\n\n— Ne sonne pas si vous êtes absent\n— Ignore les jours fériés (via capteur workday)\n— Détecte si vous êtes au lit (Withings)\n— S'arrête si vous êtes déjà levé (mouvement cuisine)\n— Se cale sur votre agenda (1er RDV − marge)\n— Vous réveille en phase de sommeil léger (fenêtre ±N min)",
+        "data": {
+          "presence": "Entité de présence (person)",
+          "workday_sensor": "Capteur jours fériés (binary_sensor workday)",
+          "ignorer_feries": "Ignorer les jours fériés",
+          "withings_bed_1": "Capteur de lit 1 (Withings — présence au lit)",
+          "withings_bed_2": "Capteur de lit 2 (Withings — 2e personne)",
+          "mouvement_sdb": "Capteur de mouvement salle de bain",
+          "mouvement_stop": "Arrêter le réveil au mouvement SdB (= levé)",
+          "lever_anticippe": "Annuler si lever anticipé (mouvement cuisine avant H)",
+          "mouvement_cuisine": "Capteur de mouvement cuisine",
+          "adaptatif_agenda": "Réveil adaptatif (caler sur le 1er RDV de l'agenda)",
+          "agenda_entity": "Agenda (calendar entity — Google/CalDAV)",
+          "agenda_marge_min": "Marge avant le RDV (min)",
+          "sommeil_phase": "Réveil en phase de sommeil léger (fenêtre ±N min)",
+          "sommeil_fenetre_min": "Fenêtre de réveil (min autour de l'heure cible)"
+        }
+      },
+      "notification": {
+        "title": "📱 Étape 6/7 — Notification & contrôles",
+        "description": "Recevez une notification actionnable avec boutons Snooze / Stop, et un briefing vocal au moment de se lever.\n\nSi vous ne répondez pas, SmartWAKE escalade : volume max + toutes lumières à 100%.",
+        "data": {
+          "notification_activee": "Activer la notification mobile (Snooze / Stop)",
+          "notify_device": "Service de notification mobile (ex : notify.mobile_app_mon_tel)",
+          "notif_titre": "Titre de la notification",
+          "notif_message": "Message de la notification",
+          "tts_activee": "Activer le briefing vocal au Stop",
+          "tts_entity": "Entité TTS (media_player pour la voix)",
+          "snooze_duree": "Durée du snooze (min)",
+          "snooze_max": "Nombre max de snooze",
+          "escalade_min": "Escalade si pas de Stop après (min)"
+        }
+      },
+      "ai": {
+        "title": "🤖 Étape 7/7 — AI Task (optionnel)",
+        "description": "Fonctionnalités IA — requiert HA ≥ 2025.8 et une intégration AI Task configurée (Ollama local, Anthropic, Google ou OpenAI).\n\n— Briefing matinal naturel rédigé par l'IA\n— Musique adaptative selon le contexte\n— Suggestion d'heure de réveil chaque soir\n— Bilan de sommeil hebdomadaire\n— Vérification du lever par caméra\n\nL'IA ne déclenche jamais la sonnerie. Fallback automatique si indisponible.",
+        "data": {
+          "ai_briefing": "Briefing matinal généré par IA (météo + agenda + trajet)",
+          "ai_task_entity": "Entité AI Task (préférée)",
+          "ai_musique_adapt": "Musique adaptative IA (choix selon météo)",
+          "ai_suggestion_heure": "Suggestion d'heure du soir (notification Accepter/Refuser)",
+          "ai_bilan_hebdo": "Bilan de sommeil hebdomadaire (service smartwake.bilan_hebdo)",
+          "ai_verif_lever": "Vérification lever par caméra+IA (10 min après Stop)",
+          "ai_camera_verif": "Caméra de vérification (chambre)",
+          "weather_entity": "Entité météo (ex : weather.home)",
+          "trajet_sensor": "Capteur temps de trajet (sensor)",
+          "batterie_sensor": "Capteur batterie téléphone (sensor)"
         }
       }
     },
     "error": {
       "media_required": "Sélectionnez un lecteur de musique si la musique est activée",
-      "light_required": "Sélectionnez une lumière si la lumière progressive est activée"
+      "light_required": "Sélectionnez une lumière si la lumière progressive est activée",
+      "jours_perso_required": "Sélectionnez au moins un jour si mode Personnalisé"
     },
     "abort": {
       "already_configured": "Un réveil avec ce nom existe déjà"
@@ -37,29 +116,38 @@
     "step": {
       "init": {
         "title": "Modifier le réveil",
-        "description": "Ajustez les paramètres de votre réveil.",
+        "description": "Ajustez les paramètres de votre réveil. Tous les champs sont modifiables.",
         "data": {
           "heure": "Heure du réveil",
           "jours": "Jours actifs",
           "lumiere_activee": "Activer la lumière progressive",
-          "lumiere": "Lumière à allumer progressivement",
+          "lumiere": "Lumière",
           "musique_activee": "Activer la musique",
           "media_player": "Lecteur de musique",
-          "playlist": "ID de la playlist Spotify",
-          "volume": "Volume de la musique",
-          "radiateur": "Radiateur (optionnel)",
-          "notification_activee": "Activer la notification de rappel",
-          "notify_device": "Service de notification mobile",
-          "withings_bed_1": "Capteur de lit 1 (Withings)",
-          "withings_bed_2": "Capteur de lit 2 (Withings)",
-          "brightness_max": "Luminosité maximale (1-255)",
-          "duree_progressive": "Durée de l'éclairage progressif (min)"
+          "playlist": "Playlist / URL radio",
+          "volume_final": "Volume final",
+          "radiateur": "Radiateur / thermostat",
+          "prechauffe_min": "Pré-chauffage avant (min)",
+          "cafetiere": "Cafetière / bouilloire",
+          "volets": "Volets à ouvrir",
+          "notification_activee": "Notification mobile",
+          "notify_device": "Service notification mobile",
+          "notif_titre": "Titre notification",
+          "notif_message": "Message notification",
+          "snooze_duree": "Durée snooze (min)",
+          "snooze_max": "Max snooze",
+          "escalade_min": "Escalade après (min)",
+          "brightness_max": "Luminosité max (1-255)",
+          "duree_progressive": "Durée éclairage progressif (min)",
+          "aube_min": "Aube avant l'heure H (min)",
+          "ponctuel": "Réveil ponctuel",
+          "skip_prochain": "Sauter le prochain réveil",
+          "mode_vacances": "Mode vacances",
+          "ignorer_feries": "Ignorer les jours fériés",
+          "presence": "Présence (person)",
+          "workday_sensor": "Capteur jours fériés (workday)"
         }
       }
-    },
-    "error": {
-      "media_required": "Sélectionnez un lecteur de musique si la musique est activée",
-      "light_required": "Sélectionnez une lumière si la lumière progressive est activée"
     }
   }
 }
