@@ -431,3 +431,149 @@ async def test_number_volume_reste_flottant(coordinator):
 
     await ent.async_set_native_value(0.42)
     assert coordinator.config["volume_final"] == pytest.approx(0.42)
+
+
+# ── Garde-fou : aucun nom non défini dans le composant ─────────
+
+def test_aucun_nom_non_defini():
+    """Régression : v2.6.0 utilisait 10 constantes sans les importer
+    (CONF_MODE_HEURE, CONF_HEURE_LUNDI…, CONF_MODE_VACANCES_ENTITY,
+    CONF_AI_CUSTOM_TASKS, CONF_WEATHER_ENTITY), ce qui faisait planter
+    l'écran d'options « Base » par NameError.
+
+    Ce test relit tous les modules et vérifie qu'aucun nom global n'est
+    utilisé sans être importé ou défini.
+    """
+    import ast
+    import glob
+    import os
+
+    builtins_ok = set(dir(__builtins__)) if isinstance(__builtins__, dict) is False else set(__builtins__)
+    import builtins as _b
+    builtins_ok = set(dir(_b))
+
+    erreurs = []
+    base = os.path.join("custom_components", "smartwake")
+    for path in sorted(glob.glob(os.path.join(base, "*.py"))):
+        tree = ast.parse(open(path, encoding="utf-8").read())
+
+        disponibles = set(builtins_ok)
+        # imports
+        for n in ast.walk(tree):
+            if isinstance(n, (ast.Import, ast.ImportFrom)):
+                for a in n.names:
+                    disponibles.add(a.asname or a.name.split(".")[0])
+        # affectations, fonctions, classes, args au niveau module et local
+        for n in ast.walk(tree):
+            if isinstance(n, ast.Assign):
+                for t in n.targets:
+                    for sub in ast.walk(t):
+                        if isinstance(sub, ast.Name):
+                            disponibles.add(sub.id)
+            elif isinstance(n, (ast.AnnAssign, ast.AugAssign)):
+                if isinstance(n.target, ast.Name):
+                    disponibles.add(n.target.id)
+            elif isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                disponibles.add(n.name)
+                for a in list(n.args.args) + list(n.args.kwonlyargs) + list(n.args.posonlyargs):
+                    disponibles.add(a.arg)
+                if n.args.vararg:
+                    disponibles.add(n.args.vararg.arg)
+                if n.args.kwarg:
+                    disponibles.add(n.args.kwarg.arg)
+            elif isinstance(n, ast.ClassDef):
+                disponibles.add(n.name)
+            elif isinstance(n, ast.ExceptHandler) and n.name:
+                disponibles.add(n.name)
+            elif isinstance(n, (ast.For, ast.AsyncFor)):
+                for sub in ast.walk(n.target):
+                    if isinstance(sub, ast.Name):
+                        disponibles.add(sub.id)
+            elif isinstance(n, ast.comprehension):
+                for sub in ast.walk(n.target):
+                    if isinstance(sub, ast.Name):
+                        disponibles.add(sub.id)
+            elif isinstance(n, ast.withitem) and n.optional_vars is not None:
+                for sub in ast.walk(n.optional_vars):
+                    if isinstance(sub, ast.Name):
+                        disponibles.add(sub.id)
+            elif isinstance(n, ast.Lambda):
+                for a in list(n.args.args) + list(n.args.kwonlyargs):
+                    disponibles.add(a.arg)
+            elif isinstance(n, ast.NamedExpr) and isinstance(n.target, ast.Name):
+                disponibles.add(n.target.id)
+
+        for n in ast.walk(tree):
+            if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load):
+                if n.id not in disponibles:
+                    erreurs.append(f"{os.path.basename(path)}:{n.lineno} {n.id}")
+
+    assert not erreurs, "noms non définis :\n" + "\n".join(erreurs)
+
+
+# ── Garde-fou : traductions du menu d'options ─────────────────
+
+def test_menu_options_traduits():
+    """Régression : async_show_menu listait 7 sections mais
+    options.step.init.menu_options était absent des traductions, donc le
+    menu s'affichait sans aucun libellé."""
+    import ast
+    import json
+
+    src = open("custom_components/smartwake/config_flow.py", encoding="utf-8").read()
+    tree = ast.parse(src)
+
+    attendues = set()
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) \
+                and n.func.attr == "async_show_menu":
+            for kw in n.keywords:
+                if kw.arg == "menu_options" and isinstance(kw.value, ast.List):
+                    for elt in kw.value.elts:
+                        if isinstance(elt, ast.Constant):
+                            attendues.add(elt.value)
+    assert attendues, "aucun menu_options trouvé dans config_flow"
+
+    for fichier in ("strings.json", "translations/fr.json"):
+        tr = json.load(open(f"custom_components/smartwake/{fichier}", encoding="utf-8"))
+        menu = tr["options"]["step"]["init"].get("menu_options", {})
+        manquants = sorted(attendues - set(menu))
+        assert not manquants, f"{fichier} : sections sans libellé {manquants}"
+
+
+def test_champs_options_traduits():
+    """Chaque champ des formulaires d'options doit avoir un libellé,
+    sinon l'utilisateur voit une clé brute ou un champ sans nom."""
+    import ast
+    import json
+
+    const = {}
+    for n in ast.walk(ast.parse(open("custom_components/smartwake/const.py", encoding="utf-8").read())):
+        if isinstance(n, ast.Assign):
+            for t in n.targets:
+                if isinstance(t, ast.Name) and isinstance(n.value, ast.Constant):
+                    const[t.id] = n.value.value
+
+    tree = ast.parse(open("custom_components/smartwake/config_flow.py", encoding="utf-8").read())
+
+    for fichier in ("strings.json", "translations/fr.json"):
+        tr = json.load(open(f"custom_components/smartwake/{fichier}", encoding="utf-8"))
+        steps = tr["options"]["step"]
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.AsyncFunctionDef) or not node.name.startswith("async_step_"):
+                continue
+            step = node.name[len("async_step_"):]
+            if step not in steps:
+                continue
+            champs = []
+            for n in ast.walk(node):
+                if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) \
+                        and n.func.attr in ("Optional", "Required"):
+                    a = n.args[0] if n.args else None
+                    if isinstance(a, ast.Name) and a.id in const:
+                        champs.append(const[a.id])
+                    elif isinstance(a, ast.Constant):
+                        champs.append(a.value)
+            libelles = set(steps[step].get("data", {}))
+            manquants = [c for c in champs if c not in libelles]
+            assert not manquants, f"{fichier} étape '{step}' : champs sans libellé {manquants}"

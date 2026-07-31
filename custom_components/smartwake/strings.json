@@ -35,7 +35,16 @@
     "step": {
       "init": {
         "title": "Configurer le réveil",
-        "description": "Choisissez une section à modifier."
+        "description": "Choisissez une section à modifier.",
+        "menu_options": {
+          "base": "⏰ Base — heure, jours, mode vacances",
+          "musique": "🎵 Musique — source et volume progressif",
+          "lumiere": "💡 Lumière & aube — simulation de lever",
+          "confort": "🏠 Confort — chauffage, volets, cafetière",
+          "intelligence": "🧠 Intelligence — présence, fériés, agenda",
+          "notification": "📱 Notification — mobile, TTS, escalade",
+          "ai": "🤖 AI Task — briefing et suggestions IA"
+        }
       },
       "base": {
         "title": "Base",
@@ -46,7 +55,16 @@
           "jours_perso": "Jours personnalisés",
           "ponctuel": "Réveil ponctuel (une seule fois)",
           "skip_prochain": "Sauter le prochain réveil",
-          "mode_vacances": "Mode vacances"
+          "mode_vacances": "Mode vacances",
+          "mode_heure": "Mode d'heure",
+          "heure_lundi": "Heure du lundi",
+          "heure_mardi": "Heure du mardi",
+          "heure_mercredi": "Heure du mercredi",
+          "heure_jeudi": "Heure du jeudi",
+          "heure_vendredi": "Heure du vendredi",
+          "heure_samedi": "Heure du samedi",
+          "heure_dimanche": "Heure du dimanche",
+          "mode_vacances_entity": "Entité de mode vacances"
         },
         "data_description": {
           "heure": "L'heure à laquelle le réveil se déclenchera (ex : 07:00).",
@@ -54,7 +72,10 @@
           "jours_perso": "Cochez les jours. Visible uniquement si Jours = Personnalisé.",
           "ponctuel": "Si activé, le réveil se désactive automatiquement après avoir sonné une fois.",
           "skip_prochain": "Saute uniquement le prochain réveil, sans modifier la planification. Se remet à zéro après.",
-          "mode_vacances": "Suspend ce réveil indéfiniment. Désactivez pour reprendre."
+          "mode_vacances": "Suspend ce réveil indéfiniment. Désactivez pour reprendre.",
+          "mode_heure": "« Heure unique » applique la même heure tous les jours. « Heure par jour » utilise les sept heures ci-dessous.",
+          "heure_lundi": "Utilisée uniquement en mode « Heure par jour ».",
+          "mode_vacances_entity": "Calendrier, input_boolean, binary_sensor ou personne. Le réveil ne sonne pas quand cette entité est « on »."
         }
       },
       "musique": {
@@ -106,7 +127,9 @@
           "cafetiere_min": "Café avant (min)",
           "volets": "Volets à ouvrir",
           "volets_soleil": "Ouvrir volets seulement si soleil levé",
-          "scenes_matin": "Activer la scène matin"
+          "scenes_matin": "Activer la scène matin",
+          "volets_position": "Position d'ouverture des volets (%)",
+          "scene_matin_entities": "Scènes à activer le matin"
         },
         "data_description": {
           "prechauffe_min": "Le radiateur passe en mode confort X minutes avant l'heure du réveil (ex : 45 = pré-chauffe à H-45min).",
@@ -163,7 +186,8 @@
           "tts_entity": "Entité TTS",
           "snooze_duree": "Snooze (min)",
           "snooze_max": "Max snooze",
-          "escalade_min": "Escalade après (min)"
+          "escalade_min": "Escalade après (min)",
+          "tts_message": "Message vocal (TTS)"
         },
         "data_description": {
           "notification_activee": "Envoie une notification sur votre téléphone avec les boutons Snooze et Stop.",
