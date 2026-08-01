@@ -1229,9 +1229,16 @@ class ReveilCoordinator(DataUpdateCoordinator):
 
     @staticmethod
     def _media_id(valeur: Any) -> str:
-        """Identifiant média, que le sélecteur renvoie un dict ou une chaîne."""
+        """Identifiant média, que le sélecteur renvoie un dict ou une chaîne.
+
+        Le MediaSelector de Home Assistant renvoie « media_content_id », non
+        « content_id » : chercher la mauvaise clé faisait passer une playlist
+        pourtant configurée pour vide.
+        """
         if isinstance(valeur, dict):
-            return str(valeur.get("content_id") or "").strip()
+            return str(
+                valeur.get("media_content_id") or valeur.get("content_id") or ""
+            ).strip()
         return str(valeur or "").strip()
 
     async def _demarrer_musique(self) -> None:
@@ -1247,7 +1254,11 @@ class ReveilCoordinator(DataUpdateCoordinator):
         content_id = self._media_id(playlist_raw)
         content_type = "music"
         if isinstance(playlist_raw, dict):
-            content_type = playlist_raw.get("content_type") or "music"
+            content_type = (
+                playlist_raw.get("media_content_type")
+                or playlist_raw.get("content_type")
+                or "music"
+            )
 
         # Musique adaptative IA : choisir parmi les playlists réellement
         # configurées. Les options étaient auparavant des noms inventés, que le

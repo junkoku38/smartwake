@@ -2157,6 +2157,16 @@ def test_media_id_accepte_dict_et_chaine(coordinator=None):
     from custom_components.smartwake.coordinator import ReveilCoordinator
 
     f = ReveilCoordinator._media_id
+    # Format réel renvoyé par le MediaSelector de Home Assistant : la clé est
+    # « media_content_id », pas « content_id ». Chercher la mauvaise faisait
+    # passer une playlist configurée pour vide.
+    assert f({
+        "entity_id": "media_player.chambre",
+        "media_content_id": "media-source://media_source/local/reveil.mp3",
+        "media_content_type": "audio/mpeg",
+    }) == "media-source://media_source/local/reveil.mp3"
+    assert f({"media_content_id": "spotify:playlist:37i9dQ"}) == "spotify:playlist:37i9dQ"
+    # Rétrocompatibilité avec l'ancien format
     assert f({"content_id": "x", "content_type": "music"}) == "x"
     assert f("y") == "y"
     assert f("  z  ") == "z"
