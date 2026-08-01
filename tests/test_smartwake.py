@@ -3064,3 +3064,101 @@ async def test_personne_au_lit_interprete_tout_type(coordinator):
 
     coordinator.hass.states.set("sensor.pression", "48")  # kg sur le matelas
     assert coordinator._personne_au_lit() is True
+
+
+# ── Vérification nocturne ──────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_verif_nocturne_alerte_les_ouvertures(coordinator):
+    """Une notification part si une porte, volet ou serrure reste ouvert."""
+    notifs = []
+
+    async def _notifier(device, titre, msg):
+        notifs.append((titre, msg))
+
+    coordinator._notifier = _notifier
+    coordinator.hass.async_create_task = lambda c: asyncio.ensure_future(c)
+    coordinator.entry.data = {
+        **coordinator.entry.data,
+        "verif_nocturne": True,
+        "verif_nocturne_entities": ["cover.garage", "cover.portail",
+                                    "lock.serrure", "binary_sensor.porte"],
+        "verif_nocturne_message": "Pensez à fermer :",
+        "notify_device": "notify.test",
+    }
+    coordinator.hass.states.set("cover.garage", "open",
+                               {"friendly_name": "Garage"})
+    coordinator.hass.states.set("cover.portail", "closed")
+    coordinator.hass.states.set("lock.serrure", "unlocked",
+                                {"friendly_name": "Serrure"})
+    coordinator.hass.states.set("binary_sensor.porte", "off")
+
+    from homeassistant.util import dt as dt_util
+    coordinator._verif_nocturne_callback(dt_util.now())
+    await asyncio.sleep(0.1)
+
+    assert len(notifs) == 1
+    titre, corps = notifs[0]
+    assert "nocturne" in titre.lower()
+    assert "Garage" in corps
+    assert "Serrure" in corps
+    assert "Portail" not in corps  # fermé, pas signalé
+
+
+@pytest.mark.asyncio
+async def test_verif_nocturne_silencieuse_si_tout_ferme(coordinator):
+    """Aucune notification si tout est correctement fermé."""
+    notifs = []
+
+    async def _notifier(device, titre, msg):
+        notifs.append((titre, msg))
+
+    coordinator._notifier = _notifier
+    coordinator.hass.async_create_task = lambda c: asyncio.ensure_future(c)
+    coordinator.entry.data = {
+        **coordinator.entry.data,
+        "verif_nocturne": True,
+        "verif_nocturne_entities": ["cover.garage", "lock.serrure"],
+        "notify_device": "notify.test",
+    }
+    coordinator.hass.states.set("cover.garage", "closed")
+    coordinator.hass.states.set("lock.serrure", "locked")
+
+    from homeassistant.util import dt as dt_util
+    coordinator._verif_nocturne_callback(dt_util.now())
+    await asyncio.sleep(0.1)
+
+    assert len(notifs) == 0
+
+
+@pytest.mark.asyncio
+async def test_verif_nocturne_ignore_les_indisponibles(coordinator):
+    """Un capteur hors ligne ne doit pas déclencher de fausse alerte."""
+    notifs = []
+
+    async def _notifier(device, titre, msg):
+        notifs.append((titre, msg))
+
+    coordinator._notifier = _notifier
+    coordinator.hass.async_create_task = lambda c: asyncio.ensure_future(c)
+    coordinator.entry.data = {
+        **coordinator.entry.data,
+        "verif_nocturne": True,
+        "verif_nocturne_entities": ["binary_sensor.hs", "cover.ok"],
+        "notify_device": "notify.test",
+    }
+    coordinator.hass.states.set("binary_sensor.hs", "unavailable")
+    coordinator.hass.states.set("cover.ok", "closed")
+
+    from homeassistant.util import dt as dt_util
+    coordinator._verif_nocturne_callback(dt_util.now())
+    await asyncio.sleep(0.1)
+
+    assert len(notifs) == 0
+
+
+def test_verif_nocturne_section_dans_le_menu():
+    """La section doit être déclarée dans le menu et traduite."""
+    src = open("custom_components/smartwake/config_flow.py", encoding="utf-8").read()
+    assert "async_step_securite" in src
+    assert "securite" in src

@@ -55,6 +55,12 @@ from .const import (
     CONF_AI_SUGGESTION_HEURE,
     CONF_AI_SUGGESTION_HEURE_PLANIF,
     CONF_AI_BILAN_JOUR,
+    CONF_VERIF_NOCTURNE,
+    CONF_VERIF_NOCTURNE_ENTITIES,
+    CONF_VERIF_NOCTURNE_HEURE,
+    CONF_VERIF_NOCTURNE_MESSAGE,
+    DEFAULT_VERIF_NOCTURNE_HEURE,
+    DEFAULT_VERIF_NOCTURNE_MESSAGE,
     CONF_AI_BILAN_HEURE_PLANIF,
     CONF_AI_BILAN_HEBDO,
     DEFAULT_AI_SUGGESTION_HEURE,
@@ -490,6 +496,65 @@ class ReveilCoordinator(DataUpdateCoordinator):
                 cfg.get(CONF_AI_BILAN_JOUR, DEFAULT_AI_BILAN_JOUR),
                 h_bilan, m_bilan, self.entry.title,
             )
+
+        # Vérification nocturne : alerte si une ouverture reste ouverte
+        if cfg.get(CONF_VERIF_NOCTURNE, False):
+            h_verif, m_verif = self._heure_minute(
+                cfg.get(CONF_VERIF_NOCTURNE_HEURE), DEFAULT_VERIF_NOCTURNE_HEURE
+            )
+            self._unsub_listeners.append(
+                async_track_time_change(
+                    self.hass, self._verif_nocturne_callback,
+                    hour=h_verif, minute=m_verif, second=0,
+                )
+            )
+            _LOGGER.debug(
+                "Vérification nocturne planifiée à %02d:%02d pour '%s'",
+                h_verif, m_verif, self.entry.title,
+            )
+
+    @callback
+    def _verif_nocturne_callback(self, now: datetime) -> None:
+        """Vérifie les ouvertures et alerte si l'une reste ouverte.
+
+        Contrairement aux tâches IA, c'est une logique déterministe : on
+        compare l'état attendu (« fermé ») à l'état réel de chaque entité
+        désignée. Aucun risque d'hallucination, et ça fonctionne même sans
+        modèle IA configuré.
+        """
+        cfg = self.entry.data
+        entites = cfg.get(CONF_VERIF_NOCTURNE_ENTITIES, [])
+        if not entites:
+            return
+
+        # États considérés comme « fermé » selon le domaine.
+        # lock.locked = sécurisé (fermé), lock.unlocked = ouvert
+        FERME = {"off", "closed", "locked", "not_home", "0"}
+
+        ouvertes = []
+        for entity_id in entites:
+            etat = self.hass.states.get(entity_id)
+            if etat is None or etat.state in ("unknown", "unavailable"):
+                continue
+            if etat.state not in FERME:
+                fn = etat.attributes.get("friendly_name", entity_id)
+                ouvertes.append(f"• {fn} ({etat.state})")
+
+        if not ouvertes:
+            _LOGGER.debug("Vérification nocturne '%s' : tout est fermé", self.entry.title)
+            return
+
+        message = cfg.get(CONF_VERIF_NOCTURNE_MESSAGE, DEFAULT_VERIF_NOCTURNE_MESSAGE)
+        corps = f"{message}\n" + "\n".join(ouvertes)
+        _LOGGER.info("Vérification nocturne '%s' : %d ouverture(s)", self.entry.title, len(ouvertes))
+        self._log_event(f"Vérif nocturne : {len(ouvertes)} ouverture(s)")
+        self.hass.async_create_task(
+            self._notifier(
+                cfg.get(CONF_NOTIFY_DEVICE),
+                "🔒 Vérification nocturne",
+                corps,
+            )
+        )
 
     @callback
     def _ai_bilan_callback(self, now: datetime) -> None:

@@ -22,6 +22,12 @@ from .const import (
     CONF_AI_SUGGESTION_HEURE_PLANIF,
     CONF_AI_BILAN_JOUR,
     CONF_AI_BILAN_HEURE_PLANIF,
+    CONF_VERIF_NOCTURNE,
+    CONF_VERIF_NOCTURNE_HEURE,
+    CONF_VERIF_NOCTURNE_ENTITIES,
+    CONF_VERIF_NOCTURNE_MESSAGE,
+    DEFAULT_VERIF_NOCTURNE_HEURE,
+    DEFAULT_VERIF_NOCTURNE_MESSAGE,
     CONF_AI_BRIEFING_SI_TRAVAIL,
     CONF_ADAPTATIF_AGENDA,
     CONF_AGENDA_ENTITY,
@@ -448,9 +454,31 @@ class SmartWAKEOptionsFlow(config_entries.OptionsFlow):
                 "intelligence",
                 "notification",
                 "ai",
+                "securite",
                 "test_ia",
             ],
         )
+
+    async def async_step_securite(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.FlowResult:
+        """Configuration de la vérification nocturne."""
+        data = self._data
+        schema = vol.Schema({
+            vol.Required(CONF_VERIF_NOCTURNE, default=data.get(CONF_VERIF_NOCTURNE, False)): bool,
+            vol.Optional(CONF_VERIF_NOCTURNE_HEURE, default=data.get(CONF_VERIF_NOCTURNE_HEURE, DEFAULT_VERIF_NOCTURNE_HEURE)): selector.TimeSelector(),
+            vol.Optional(CONF_VERIF_NOCTURNE_ENTITIES, default=data.get(CONF_VERIF_NOCTURNE_ENTITIES, [])): selector.EntitySelector(
+                selector.EntitySelectorConfig(
+                    domain=["cover", "binary_sensor", "lock", "sensor"],
+                    multiple=True,
+                )
+            ),
+            vol.Optional(CONF_VERIF_NOCTURNE_MESSAGE, default=data.get(CONF_VERIF_NOCTURNE_MESSAGE, DEFAULT_VERIF_NOCTURNE_MESSAGE)): selector.TextSelector(),
+        })
+        if user_input is not None:
+            self._enregistrer(user_input, schema)
+            return await self.async_step_init()
+        return self._formulaire("securite", schema)
 
     async def async_step_test_ia(
         self, user_input: dict[str, Any] | None = None

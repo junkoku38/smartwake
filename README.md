@@ -83,6 +83,10 @@ Chaque champ a une **description** expliquant ce qu'il fait et pourquoi.
 ### AI Task (HA ≥ 2025.8, optionnel)
 - **Briefing matinal IA** : briefing naturel (météo, agenda, trajet, batterie)
 - **Musique adaptative** : l'IA choisit la playlist selon la météo
+- **🔒 Vérification nocturne** : chaque soir à l'heure choisie, vérifie que
+  portes, volets, portail et garage sont fermés. Si une ouverture reste
+  ouverte, une notification est envoyée. Logique déterministe, sans IA —
+  fonctionne même sans modèle configuré.
 - **Suggestion d'heure du soir** : notification Accepter/Refuser (l'IA propose,
   vous validez). Heure de l'envoi configurable.
 - **Bilan de sommeil hebdomadaire** : synthèse + recommandations (service `smartwake.bilan_hebdo`).

@@ -44,7 +44,8 @@
           "intelligence": "🧠 Intelligence — présence, fériés, agenda",
           "notification": "📱 Notification — mobile, TTS, escalade",
           "ai": "🤖 AI Task — briefing et suggestions IA",
-          "test_ia": "🧪 Tester les tâches IA"
+          "test_ia": "🧪 Tester les tâches IA",
+          "securite": "🔒 Sécurité nocturne"
         }
       },
       "base": {
@@ -282,6 +283,20 @@
         },
         "data_description": {
           "tache": "L'option correspondante est activée le temps du test, même si elle est désactivée dans la configuration."
+        }
+      },
+      "securite": {
+        "title": "Sécurité nocturne",
+        "description": "Vérifie chaque soir que les portes, volets et portails sont fermés. Une notification est envoyée si une ouverture reste ouverte.",
+        "data": {
+          "verif_nocturne": "Activer la vérification nocturne",
+          "verif_nocturne_heure": "Heure de la vérification",
+          "verif_nocturne_entities": "Ouvertures à surveiller",
+          "verif_nocturne_message": "Message de la notification"
+        },
+        "data_description": {
+          "verif_nocturne_entities": "Portes, volets, portail, garage — toute entité dont l'état « fermé » est off, closed, locked ou 0.",
+          "verif_nocturne_message": "Texte qui précède la liste des ouvertures restées ouvertes."
         }
       }
     },

@@ -157,6 +157,17 @@ CONF_SOMMEIL_SENSORS = "sommeil_sensors"
 CONF_AI_SUGGESTION_HEURE_PLANIF = "ai_suggestion_heure_planif"
 CONF_AI_BILAN_JOUR = "ai_bilan_jour"
 CONF_AI_BILAN_HEURE_PLANIF = "ai_bilan_heure_planif"
+
+# Vérification nocturne : alerte si une ouverture reste ouverte le soir.
+# Les entités à surveiller sont désignées librement — portes, volets, portail,
+# garage. L'alerte ne s'appuie pas sur l'IA : c'est une logique déterministe
+# qui compare l'état attendu (« fermé ») à l'état réel.
+CONF_VERIF_NOCTURNE = "verif_nocturne"
+CONF_VERIF_NOCTURNE_HEURE = "verif_nocturne_heure"
+CONF_VERIF_NOCTURNE_ENTITIES = "verif_nocturne_entities"
+CONF_VERIF_NOCTURNE_MESSAGE = "verif_nocturne_message"
+DEFAULT_VERIF_NOCTURNE_HEURE = "20:00"
+DEFAULT_VERIF_NOCTURNE_MESSAGE = "Avant d'aller dormir, pensez à fermer :"
 DEFAULT_AI_SUGGESTION_HEURE = "21:30"
 DEFAULT_AI_BILAN_HEURE = "20:00"
 DEFAULT_AI_BILAN_JOUR = "dimanche"
