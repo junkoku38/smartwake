@@ -2106,6 +2106,10 @@ class ReveilCoordinator(DataUpdateCoordinator):
         try:
             if tache == "briefing":
                 res = await ai.generate_briefing(self.hass, cfg, self.entry.title)
+                if res:
+                    await self._notifier(
+                        cfg.get("notify_device"), "⏰ Briefing SmartWAKE", res
+                    )
             elif tache == "musique":
                 options = [self._media_id(cfg.get(cle)) for cle in
                            (CONF_PLAYLIST, CONF_PLAYLIST_DOUCE, CONF_PLAYLIST_ENERGIQUE)]
@@ -2121,6 +2125,10 @@ class ReveilCoordinator(DataUpdateCoordinator):
                 res = await ai.generate_weekly_report(
                     self.hass, cfg, self.snooze_count, "test manuel"
                 )
+                if res:
+                    await self._notifier(
+                        cfg.get("notify_device"), "🛏️ Bilan sommeil", res
+                    )
             elif tache == "lever":
                 probleme = await ai.diagnostic_presence_lit(self.hass, cfg)
                 if probleme:
@@ -2130,10 +2138,16 @@ class ReveilCoordinator(DataUpdateCoordinator):
             elif tache == "personnalisees":
                 messages = []
                 for declencheur in ("on_wake", "on_stop", "on_evening"):
-                    messages += [
-                        f"[{declencheur}] {m}"
-                        for m in await ai.run_custom_ai_task(self.hass, cfg, declencheur)
-                    ]
+                    msgs = await ai.run_custom_ai_task(self.hass, cfg, declencheur)
+                    for m in msgs:
+                        messages.append(f"[{declencheur}] {m}")
+                        # Le test doit aussi envoyer la notification, comme le
+                        # ferait le vrai déclencheur : sinon on teste le texte
+                        # mais pas la livraison.
+                        await self._notifier(
+                            cfg.get("notify_device"),
+                            f"🤖 SmartWAKE IA ({declencheur})", m
+                        )
                 res = "\n".join(messages) if messages else None
             else:
                 return f"Tâche inconnue : {tache}"
