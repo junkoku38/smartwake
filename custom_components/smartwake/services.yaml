@@ -105,5 +105,57 @@
         }
       }
     }
+  },
+  "set_jours_perso": {
+    "name": "Définir les jours personnalisés",
+    "description": "Définit la liste des jours actifs quand le mode est « personnalisé ».",
+    "target": {
+      "entity": {
+        "integration": "smartwake",
+        "domain": "switch"
+      }
+    },
+    "fields": {
+      "jours": {
+        "name": "Jours",
+        "description": "Liste des jours actifs, parmi lundi, mardi, mercredi, jeudi, vendredi, samedi, dimanche.",
+        "required": true,
+        "selector": {
+          "select": {
+            "options": [
+              {
+                "value": "lundi",
+                "label": "Lundi"
+              },
+              {
+                "value": "mardi",
+                "label": "Mardi"
+              },
+              {
+                "value": "mercredi",
+                "label": "Mercredi"
+              },
+              {
+                "value": "jeudi",
+                "label": "Jeudi"
+              },
+              {
+                "value": "vendredi",
+                "label": "Vendredi"
+              },
+              {
+                "value": "samedi",
+                "label": "Samedi"
+              },
+              {
+                "value": "dimanche",
+                "label": "Dimanche"
+              }
+            ],
+            "multiple": true
+          }
+        }
+      }
+    }
   }
 }

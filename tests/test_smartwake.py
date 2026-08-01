@@ -2031,23 +2031,33 @@ async def test_jours_personnalises_renseignes(coordinator):
 
 
 @pytest.mark.asyncio
-async def test_select_refuse_personnalise_sans_jours(coordinator):
-    """Le sélecteur ne doit pas pouvoir désactiver le réveil en silence."""
+async def test_select_accepte_personnalise_meme_sans_jours(coordinator):
+    """Le sélecteur accepte « personnalisé » même sans jours cochés : la carte
+    et les options permettent de les cocher ensuite. Le bloquer créait un
+    cercle vicieux — impossible de choisir le mode sans avoir d'abord coché
+    les jours, et impossible de cocher les jours sans le mode."""
     _stub_number_module()
-    from homeassistant.exceptions import HomeAssistantError
-
     from custom_components.smartwake.select import SELECT_DESC, ReveilSelect
 
     ent = ReveilSelect(coordinator, coordinator.entry, SELECT_DESC)
     coordinator.entry.data = {**coordinator.entry.data, "jours_perso": []}
 
-    with pytest.raises(HomeAssistantError):
-        await ent.async_select_option("personnalise")
-    assert coordinator.config["jours"] != "personnalise"
+    await ent.async_select_option("personnalise")
+    assert coordinator.config["jours"] == "personnalise"
 
-    # Les autres modes restent acceptés
-    await ent.async_select_option("weekend")
-    assert coordinator.config["jours"] == "weekend"
+
+@pytest.mark.asyncio
+async def test_service_set_jours_perso(coordinator):
+    """Le service smartwake.set_jours_perso permet de cocher les jours
+    depuis la carte ou une automatisation."""
+    from custom_components.smartwake import _get_coordinator
+    from custom_components.smartwake.const import DOMAIN
+
+    coordinator.hass.data = {DOMAIN: {coordinator.entry.entry_id: coordinator}}
+    coordinator.hass.services.async_call = AsyncMock()
+
+    await coordinator.set_config_value("jours_perso", ["lundi", "mercredi"])
+    assert coordinator.config["jours_perso"] == ["lundi", "mercredi"]
 
 
 @pytest.mark.asyncio

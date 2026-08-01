@@ -269,6 +269,7 @@ SERVICE_SKIP = "sauter_prochain"
 SERVICE_RESET = "reset"
 SERVICE_BILAN_HEBDO = "bilan_hebdo"
 SERVICE_TESTER_IA = "tester_ia"
+SERVICE_SET_JOURS_PERSO = "set_jours_perso"
 
 # ── Modes de travail ────────────────────────────────────────────
 

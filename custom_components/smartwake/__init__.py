@@ -12,6 +12,7 @@ from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse, cal
 from homeassistant.helpers import config_validation as cv, device_registry as dr, entity_registry as er
 
 from .const import (
+    CONF_JOURS_PERSO,
     DOMAIN,
     PLATFORMS,
     SERVICE_DECLENCHER,
@@ -21,6 +22,7 @@ from .const import (
     SERVICE_STOP,
     SERVICE_BILAN_HEBDO,
     SERVICE_TESTER_IA,
+    SERVICE_SET_JOURS_PERSO,
     integration_version,
     SCHEMA_VERSION,
     CONF_PRESENCE_LIT_SENSORS,
@@ -105,6 +107,14 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         return {"resultats": resultats}
 
     hass.services.async_register(DOMAIN, SERVICE_BILAN_HEBDO, _handle_bilan_hebdo, schema=SERVICE_SCHEMA)
+    async def _handle_set_jours_perso(call: ServiceCall) -> None:
+        """Définit les jours personnalisés d'un réveil."""
+        jours = call.data.get("jours", [])
+        for eid in call.data.get(ATTR_ENTITY_ID, []):
+            coord = _get_coordinator(hass, eid)
+            if coord:
+                await coord.set_config_value(CONF_JOURS_PERSO, list(jours))
+
     hass.services.async_register(
         DOMAIN, SERVICE_TESTER_IA, _handle_tester_ia,
         schema=vol.Schema({

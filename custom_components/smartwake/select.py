@@ -85,11 +85,6 @@ class ReveilSelect(SelectEntity):
         # d'options permet de saisir. L'accepter sans cette liste désactivait
         # silencieusement le réveil : plus aucun jour actif, donc plus de
         # prochain déclenchement.
-        if option == "personnalise" and not self.coordinator.config.get(CONF_JOURS_PERSO):
-            raise HomeAssistantError(
-                "Choisissez d'abord les jours dans Options → Base → Jours "
-                "personnalisés : sans eux, le réveil ne sonnerait aucun jour."
-            )
         await self.coordinator.set_jours(option)
 
     async def async_added_to_hass(self) -> None:
