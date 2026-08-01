@@ -1236,6 +1236,16 @@ class ReveilCoordinator(DataUpdateCoordinator):
             ).strip()
         return str(valeur or "").strip()
 
+    def _volume_actuel(self, media: str) -> float:
+        """Volume actuel d'un lecteur, pour reprendre la montée au bon niveau."""
+        etat = self.hass.states.get(media)
+        if etat is not None:
+            try:
+                return float(etat.attributes.get("volume_level", 0))
+            except (TypeError, ValueError):
+                pass
+        return 0.0
+
     async def _demarrer_musique(self) -> None:
         """Démarre la musique avec volume progressif. Retry + fallback TTS si échec."""
         cfg = self.entry.data
@@ -1814,14 +1824,44 @@ class ReveilCoordinator(DataUpdateCoordinator):
         self._notify()
 
         if cfg.get(CONF_MUSIQUE_ACTIVEE) and cfg.get(CONF_MEDIA_PLAYER):
-            try:
-                await self.hass.services.async_call(
-                    "media_player", "media_play",
-                    {"entity_id": cfg[CONF_MEDIA_PLAYER]},
-                    blocking=True,
-                )
-            except Exception as exc:
-                _LOGGER.error("Erreur reprise snooze: %s", exc)
+            # Relance la lecture, puis reprend la montée de volume là où elle
+            # s'était interrompue. La rampe originale a été annulée au snooze :
+            # sans cette relance, la musique reprenait mais restait bloquée au
+            # volume du dernier pas atteint avant le snooze.
+            async def _reprise_musique():
+                try:
+                    await self.hass.services.async_call(
+                        "media_player", "media_play",
+                        {"entity_id": cfg[CONF_MEDIA_PLAYER]},
+                        blocking=True,
+                    )
+                except Exception as exc:
+                    _LOGGER.error("Erreur reprise musique: %s", exc)
+                    return
+                # Montée de volume depuis le niveau actuel
+                vol_initial = self._volume_actuel(cfg[CONF_MEDIA_PLAYER])
+                vol_final = cfg.get(CONF_VOLUME_FINAL, DEFAULT_VOLUME_FINAL)
+                duree = cfg.get(CONF_VOLUME_DUREE, DEFAULT_VOLUME_DUREE)
+                steps = max(int(duree), 1)
+                increment = (vol_final - vol_initial) / steps
+                for i in range(steps):
+                    await asyncio.sleep(60)
+                    if not self._reveil_en_cours or self._statut != STATUT_RINGING:
+                        return
+                    vol = min(vol_initial + increment * (i + 1), vol_final)
+                    try:
+                        await self.hass.services.async_call(
+                            "media_player", "volume_set",
+                            {"entity_id": cfg[CONF_MEDIA_PLAYER], "volume_level": vol},
+                            blocking=True,
+                        )
+                    except Exception as exc:
+                        _LOGGER.error("Erreur volume reprise: %s", exc)
+                        return
+
+            self._cancel_rampes.append(
+                self.hass.async_create_task(_reprise_musique())
+            )
 
         # La rampe de lumière reprend au niveau où elle avait été suspendue
         if cfg.get(CONF_LUMIERE_ACTIVEE) and cfg.get(CONF_LUMIERE):
