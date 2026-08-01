@@ -2362,3 +2362,111 @@ async def test_capteur_fin_de_snooze(coordinator):
     coordinator._statut = "ringing"
     await coordinator.snooze()
     assert ent.native_value is not None
+
+
+# ── Régression : la lumière se rallumait pendant le snooze ──────
+
+@pytest.mark.asyncio
+async def test_snooze_suspend_la_rampe_de_lumiere(coordinator):
+    """Régression : la lumière se rallumait une trentaine de secondes après le
+    snooze et poursuivait sa montée.
+
+    snooze() éteignait la lampe mais n'annulait pas les rampes lancées par le
+    cycle. La tâche de lumière progressive continuait donc d'émettre un
+    light.turn_on à chaque pas, rallumant la chambre en pleine période de
+    snooze — alors que la reprise de la sonnerie, elle, respectait bien les
+    5 minutes.
+    """
+    coordinator.entry.data = {
+        **coordinator.entry.data,
+        "lumiere": "light.chambre", "lumiere_activee": True,
+        "snooze_duree": 5, "snooze_max": 3,
+    }
+    allumages = []
+
+    async def _call(domain, service, data=None, **kw):
+        if service == "turn_on":
+            allumages.append((data or {}).get("brightness"))
+
+    coordinator.hass.services.async_call = _call
+    coordinator._reveil_en_cours = True
+    coordinator._statut = "ringing"
+
+    async def _rampe_sans_fin():
+        while True:
+            await _call("light", "turn_on", {"brightness": 50})
+            await asyncio.sleep(0.01)
+
+    tache = asyncio.ensure_future(_rampe_sans_fin())
+    coordinator._cancel_rampes = [tache]
+    await asyncio.sleep(0.03)
+
+    with patch.object(coordinator, "_reprendre_apres_snooze", AsyncMock()):
+        await coordinator.snooze()
+
+    assert coordinator._cancel_rampes == [], "les rampes doivent être vidées"
+    avant = len(allumages)
+    await asyncio.sleep(0.1)
+    assert len(allumages) == avant, (
+        f"{len(allumages) - avant} rallumage(s) pendant le snooze"
+    )
+    tache.cancel()
+
+
+@pytest.mark.asyncio
+async def test_rampe_reprend_au_niveau_atteint(coordinator):
+    """La montée doit reprendre où elle s'était arrêtée, et non repartir de
+    zéro : le réveil serait sinon plus sombre après un snooze qu'avant."""
+    coordinator.entry.data = {
+        **coordinator.entry.data,
+        "lumiere": "light.chambre", "lumiere_activee": True,
+        "brightness_max": 162, "duree_progressive": 20,
+    }
+    niveaux = []
+
+    async def _call(domain, service, data=None, **kw):
+        if service == "turn_on":
+            niveaux.append((data or {}).get("brightness"))
+
+    coordinator.hass.services.async_call = _call
+
+    # Rampe neuve : démarre au premier pas
+    coordinator._aube_niveau = 0
+    tache = asyncio.ensure_future(coordinator._cycle_lumiere_progressive())
+    await asyncio.sleep(0.02)
+    tache.cancel()
+    premier_neuf = niveaux[0]
+
+    # Reprise : démarre au niveau mémorisé
+    niveaux.clear()
+    coordinator._aube_niveau = 120
+    tache = asyncio.ensure_future(coordinator._cycle_lumiere_progressive())
+    await asyncio.sleep(0.02)
+    tache.cancel()
+
+    assert premier_neuf < 20, f"une rampe neuve doit démarrer bas : {premier_neuf}"
+    assert niveaux[0] >= 116, f"la reprise doit repartir de ~120 : {niveaux[0]}"
+
+    # La progression doit être mémorisée au fil de la montée, sans quoi la
+    # reprise repartirait toujours du même point.
+    coordinator._aube_niveau = 0
+    niveaux.clear()
+    tache = asyncio.ensure_future(coordinator._cycle_lumiere_progressive())
+    await asyncio.sleep(0.02)
+    tache.cancel()
+    assert coordinator._aube_niveau == niveaux[-1], (
+        f"niveau mémorisé {coordinator._aube_niveau} != dernier envoyé {niveaux[-1]}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_niveau_de_rampe_remis_a_zero(coordinator):
+    """Un nouveau réveil doit repartir d'une montée complète."""
+    coordinator._aube_niveau = 140
+    coordinator._reveil_en_cours = True
+    await coordinator.stop()
+    assert coordinator._aube_niveau == 0
+
+    coordinator._aube_niveau = 140
+    await coordinator.reset()
+    assert coordinator._aube_niveau == 0

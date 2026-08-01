@@ -192,9 +192,12 @@ class ReveilCoordinator(DataUpdateCoordinator):
         # Seule la durée configurée était exposée : l'interface affichait donc
         # « Re-sonne dans 5 min » sans jamais décompter.
         self._snooze_fin: datetime | None = None
+        # Luminosité atteinte par la rampe, pour la reprendre après un snooze
+        self._aube_niveau = 0
         # Vrai si la rampe de lumière a déjà été jouée par le pré-réveil,
         # pour ne pas la relancer à l'heure du réveil
         self._aube_faite = False
+        self._aube_niveau = 0
         self._snooze_fin = None
         self._reveil_en_cours = False
         self._snooze_count = 0
@@ -1434,9 +1437,16 @@ class ReveilCoordinator(DataUpdateCoordinator):
         steps = max(1, min(brightness_max, duree * 2))
         intervalle = (duree * 60) / steps
 
+        # Reprise après un snooze : on repart du niveau atteint plutôt que de
+        # recommencer la montée depuis le début.
+        depart = 1
+        if self._aube_niveau > 0:
+            depart = min(steps, max(1, round(steps * self._aube_niveau / brightness_max)))
+
         try:
-            for i in range(1, steps + 1):
+            for i in range(depart, steps + 1):
                 cible = max(1, round(brightness_max * i / steps))
+                self._aube_niveau = cible
                 charge: dict[str, Any] = {"entity_id": lumiere, "brightness": cible}
                 if temp_kelvin:
                     charge["color_temp_kelvin"] = int(temp_kelvin)
@@ -1673,6 +1683,15 @@ class ReveilCoordinator(DataUpdateCoordinator):
             except Exception as exc:
                 _LOGGER.error("Erreur pause snooze: %s", exc)
 
+        # Les rampes doivent être suspendues, sans quoi la montée de lumière
+        # continuait pendant le snooze : la lampe se rallumait au pas suivant,
+        # une trentaine de secondes après avoir été éteinte, et poursuivait sa
+        # progression jusqu'à la reprise.
+        for tache in self._cancel_rampes:
+            if tache and not tache.done():
+                tache.cancel()
+        self._cancel_rampes = []
+
         if cfg.get(CONF_LUMIERE_ACTIVEE) and cfg.get(CONF_LUMIERE):
             try:
                 await self.hass.services.async_call(
@@ -1706,6 +1725,12 @@ class ReveilCoordinator(DataUpdateCoordinator):
                 )
             except Exception as exc:
                 _LOGGER.error("Erreur reprise snooze: %s", exc)
+
+        # La rampe de lumière reprend au niveau où elle avait été suspendue
+        if cfg.get(CONF_LUMIERE_ACTIVEE) and cfg.get(CONF_LUMIERE):
+            self._cancel_rampes.append(
+                self.hass.async_create_task(self._cycle_lumiere_progressive())
+            )
 
     async def stop(self, raison: str = "manual") -> None:
         """Arrête le cycle de réveil, pré-réveil compris.
@@ -1775,6 +1800,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
         self._skip_prochain = False
         self._skip_date = None
         self._aube_faite = False
+        self._aube_niveau = 0
         self._snooze_fin = None
         self._statut = STATUT_DONE
         # Réarme le déclencheur pour l'occurrence suivante : la planification
@@ -1910,6 +1936,8 @@ class ReveilCoordinator(DataUpdateCoordinator):
         self._skip_prochain = False
         self._skip_date = None
         self._aube_faite = False
+        self._aube_niveau = 0
+        self._snooze_fin = None
         self._reveil_en_cours = False
         self._statut = STATUT_IDLE if self._actif else STATUT_INACTIF
         self._planifier_trigger()
