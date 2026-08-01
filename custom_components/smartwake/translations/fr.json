@@ -43,7 +43,8 @@
           "confort": "🏠 Confort — chauffage, volets, cafetière",
           "intelligence": "🧠 Intelligence — présence, fériés, agenda",
           "notification": "📱 Notification — mobile, TTS, escalade",
-          "ai": "🤖 AI Task — briefing et suggestions IA"
+          "ai": "🤖 AI Task — briefing et suggestions IA",
+          "test_ia": "🧪 Tester les tâches IA"
         }
       },
       "base": {
@@ -255,6 +256,16 @@
           "sommeil_sensors": "Capteurs à transmettre au bilan hebdomadaire : score de sommeil, durées de sommeil profond/léger/paradoxal, réveils nocturnes, endormissement, ronflement… Compatible Withings, Fitbit, Oura ou tout autre capteur. Les moyennes sur 7 jours sont calculées automatiquement.",
           "ai_briefing_si_travail": "Utilise le capteur de jours travaillés configuré dans la section Intelligence.",
           "ai_bilan_jour": "Le bilan portait uniquement sur un appel manuel du service smartwake.bilan_hebdo ; il est désormais planifié."
+        }
+      },
+      "test_ia": {
+        "title": "Tester les tâches IA",
+        "description": "Choisissez une tâche et validez pour l'exécuter immédiatement, sans attendre son créneau habituel.\n\n**Dernier résultat :**\n```\n{resultat}\n```",
+        "data": {
+          "tache": "Tâche à exécuter"
+        },
+        "data_description": {
+          "tache": "L'option correspondante est activée le temps du test, même si elle est désactivée dans la configuration."
         }
       }
     },

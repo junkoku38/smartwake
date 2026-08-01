@@ -170,6 +170,19 @@ entité. Pour un réveil nommé `reveil` :
 - « Pas de réveil demain » → `smartwake_skip`
 - « Quand sonne le prochain réveil ? » → `smartwake_status`
 
+## Tester les tâches IA
+
+Les tâches IA ne se déclenchent qu'à des moments précis — au réveil, au stop,
+le soir — ce qui rend leur mise au point laborieuse. *Options → 🧪 Tester les
+tâches IA* permet d'en exécuter une immédiatement et d'afficher son résultat,
+ou l'erreur rencontrée. L'option correspondante est activée le temps du test.
+
+> Tous les modèles ne savent pas produire une réponse conforme à un schéma.
+> Ollama échoue ainsi par « Error with Ollama structured response ». Depuis la
+> 2.18.0, l'appel est alors rejoué en texte libre en réclamant du JSON, puis
+> extrait de la réponse : les tâches structurées fonctionnent donc aussi sur
+> ces modèles.
+
 ## Auto-détection à la création
 
 L'assistant ne pré-remplit une entité que si le choix est **sans ambiguïté** :

@@ -1579,7 +1579,10 @@ def test_aucun_libelle_orphelin_dans_les_traductions():
 
         orphelins = sorted(
             c for c in _cles(d)
-            if c not in valeurs and c not in ("name", "preset")
+            # « tache » est un champ transitoire du formulaire de test IA,
+            # « name » et « preset » n'existent qu'à la création : aucun n'est
+            # une clé de configuration persistée.
+            if c not in valeurs and c not in ("name", "preset", "tache")
         )
         assert not orphelins, f"{chemin} : libellés sans champ {orphelins}"
 
@@ -2470,3 +2473,98 @@ async def test_niveau_de_rampe_remis_a_zero(coordinator):
     coordinator._aube_niveau = 140
     await coordinator.reset()
     assert coordinator._aube_niveau == 0
+
+
+# ── Test des tâches IA depuis les options ──────────────────────
+
+def _flow_options(coordinator):
+    from custom_components.smartwake.config_flow import SmartWAKEOptionsFlow
+    from custom_components.smartwake.const import DOMAIN
+
+    flow = SmartWAKEOptionsFlow(coordinator.entry)
+    flow.hass = coordinator.hass
+    coordinator.hass.data = {DOMAIN: {coordinator.entry.entry_id: coordinator}}
+    captures = {}
+    flow.async_show_form = lambda **kw: captures.update(kw) or {"type": "form"}
+    return flow, captures
+
+
+def test_toutes_les_taches_ia_sont_testables():
+    """Chaque tâche IA de ai.py doit être joignable depuis les options.
+
+    Elles ne se déclenchent qu'à des moments précis — au réveil, au stop, le
+    soir — ce qui rendait leur mise au point laborieuse : seul le bilan
+    hebdomadaire disposait d'un service appelable.
+    """
+    from custom_components.smartwake.config_flow import TACHES_IA
+
+    attendues = {"briefing", "musique", "suggestion", "bilan", "lever",
+                 "personnalisees"}
+    assert set(TACHES_IA) == attendues
+
+
+@pytest.mark.asyncio
+async def test_test_ia_signale_un_reveil_non_charge(coordinator):
+    from custom_components.smartwake.const import DOMAIN
+
+    flow, captures = _flow_options(coordinator)
+    coordinator.hass.data = {DOMAIN: {}}
+    await flow.async_step_test_ia({"tache": "briefing"})
+    assert "non chargé" in captures["description_placeholders"]["resultat"]
+
+
+@pytest.mark.asyncio
+async def test_test_ia_remonte_les_exceptions(coordinator):
+    """Une erreur doit être affichée, non avalée."""
+    from custom_components.smartwake import ai
+
+    flow, captures = _flow_options(coordinator)
+    with patch.object(ai, "generate_briefing",
+                      AsyncMock(side_effect=RuntimeError("boom"))):
+        await flow.async_step_test_ia({"tache": "briefing"})
+    resultat = captures["description_placeholders"]["resultat"]
+    assert "RuntimeError" in resultat and "boom" in resultat
+
+
+@pytest.mark.asyncio
+async def test_test_ia_affiche_le_resultat(coordinator):
+    from custom_components.smartwake import ai
+
+    flow, captures = _flow_options(coordinator)
+    with patch.object(ai, "generate_briefing",
+                      AsyncMock(return_value="Bonjour, il fait beau.")):
+        await flow.async_step_test_ia({"tache": "briefing"})
+    assert captures["description_placeholders"]["resultat"] == "Bonjour, il fait beau."
+
+
+@pytest.mark.asyncio
+async def test_test_ia_active_la_fonctionnalite_le_temps_du_test(coordinator):
+    """Le test doit fonctionner même si l'option est désactivée, sans quoi il
+    faudrait l'activer avant chaque essai."""
+    from custom_components.smartwake import ai
+
+    coordinator.entry.data = {**coordinator.entry.data, "ai_briefing": False}
+    flow, captures = _flow_options(coordinator)
+    recu = {}
+
+    async def _briefing(hass, cfg, titre):
+        recu["ai_briefing"] = cfg.get("ai_briefing")
+        return "ok"
+
+    with patch.object(ai, "generate_briefing", _briefing):
+        await flow.async_step_test_ia({"tache": "briefing"})
+
+    assert recu["ai_briefing"] is True
+    # sans modifier la configuration enregistrée
+    assert coordinator.entry.data["ai_briefing"] is False
+
+
+@pytest.mark.asyncio
+async def test_test_ia_musique_exige_deux_playlists(coordinator):
+    """Sans alternative, l'IA n'a rien à choisir : autant le dire."""
+    coordinator.entry.data = {
+        **coordinator.entry.data, "playlist": "media-source://x",
+    }
+    flow, captures = _flow_options(coordinator)
+    await flow.async_step_test_ia({"tache": "musique"})
+    assert "deux playlists" in captures["description_placeholders"]["resultat"]
