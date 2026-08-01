@@ -1325,7 +1325,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
             return
 
         # Montée progressive du volume
-        steps = max(duree, 1)
+        steps = max(int(duree), 1)
         increment = (vol_final - vol_initial) / steps
         for i in range(steps):
             await asyncio.sleep(60)
