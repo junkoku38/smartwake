@@ -346,7 +346,13 @@ class ReveilCoordinator(DataUpdateCoordinator):
 
     @property
     def entity_id_prefix(self) -> str:
-        """Préfixe des entity_id des entités par jour."""
+        """Préfixe des entity_id des entités par jour.
+
+        Les entités sont nommées time.<slug(reveil+nom_entite)>_heure_<jour>.
+        Pour un réveil « Chambre 1er Réveil » et une entité « Heure Lundi »,
+        l'entity_id est time.chambre_1er_reveil_heure_lundi.
+        Le slug combine le titre du réveil et le nom convivial de l'entité.
+        """
         try:
             from homeassistant.util import slugify
             return slugify(self.entry.title)
@@ -369,7 +375,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
             heure = self.entry.data.get(cle_cfg)
             if not heure:
                 # Les heures sont dans les entités time.*, pas dans entry.data
-                entity_id = f"{self.entity_id_prefix}_heure_{jour}"
+                entity_id = f"time.{self.entity_id_prefix}_heure_{jour}"
                 etat = self.hass.states.get(entity_id)
                 if etat and etat.state not in ("unknown", "unavailable"):
                     heure = etat.state
