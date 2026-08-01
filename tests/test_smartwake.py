@@ -1083,7 +1083,7 @@ async def test_notification_actionnable_utilise_le_service_legacy(coordinator):
         appels.append((domain, service, data or {}))
 
     coordinator.hass.services.async_call = _call
-    coordinator.hass.services.has_service = lambda d, s: True
+    coordinator.hass.services.has_service = lambda d, s: s == "mobile_app_test"
 
     await coordinator._envoyer_notification()
 
@@ -2160,3 +2160,136 @@ def test_media_id_accepte_dict_et_chaine(coordinator=None):
     assert f(None) == ""
     assert f("") == ""
     assert f({}) == ""
+
+
+@pytest.mark.asyncio
+async def test_notify_entite_resolue_vers_le_service_de_plateforme(coordinator):
+    """Régression : « Service notify.sm_g991u1 introuvable ».
+
+    Une entité `notify.<objet>` est fournie par une plateforme dont le service
+    historique s'appelle `<plateforme>_<objet>`. L'entité `notify.sm_g991u1` de
+    l'application mobile correspond ainsi au service
+    `notify.mobile_app_sm_g991u1`. Chercher le service `notify.sm_g991u1`
+    échouait, et les notifications partaient sans boutons Snooze/Stop.
+    """
+    coordinator.entry.data = {
+        **coordinator.entry.data, "notify_device": "notify.sm_g991u1",
+    }
+    coordinator.hass.services.has_service = lambda d, s: (
+        d == "notify" and s == "mobile_app_sm_g991u1"
+    )
+    appels = []
+
+    async def _call(domain, service, data=None, **kw):
+        appels.append((domain, service, data or {}))
+
+    coordinator.hass.services.async_call = _call
+
+    await coordinator._envoyer_notification()
+
+    assert len(appels) == 1
+    domaine, service, data = appels[0]
+    assert (domaine, service) == ("notify", "mobile_app_sm_g991u1")
+    assert "actions" in data["data"], "les boutons doivent être transmis"
+
+
+@pytest.mark.asyncio
+async def test_notify_repli_sans_service_historique(coordinator):
+    """Sans service historique, l'entity service prend le relais — sans
+    boutons, ce qui doit être signalé."""
+    coordinator.entry.data = {
+        **coordinator.entry.data, "notify_device": "notify.inconnu",
+    }
+    coordinator.hass.services.has_service = lambda d, s: False
+    appels = []
+
+    async def _call(domain, service, data=None, **kw):
+        appels.append((domain, service, data or {}))
+
+    coordinator.hass.services.async_call = _call
+
+    await coordinator._envoyer_notification()
+
+    assert len(appels) == 1
+    domaine, service, data = appels[0]
+    assert (domaine, service) == ("notify", "send_message")
+    assert data["entity_id"] == "notify.inconnu"
+    assert "data" not in data, "l'entity service refuse la clé data"
+
+
+# ── Régression : modèles sans réponse structurée ───────────────
+
+def test_extraction_json_de_reponses_de_modele():
+    """Les modèles encadrent volontiers leur JSON de texte ou de balises."""
+    from custom_components.smartwake.ai import _extraire_json
+
+    assert _extraire_json('{"source":"a"}') == {"source": "a"}
+    assert _extraire_json('```json\n{"source":"a"}\n```') == {"source": "a"}
+    assert _extraire_json('Voici :\n```json\n{"source":"a"}\n```\nBonne écoute')\
+        == {"source": "a"}
+    assert _extraire_json('Je propose {"source": "a"} ce matin.') == {"source": "a"}
+    assert _extraire_json("Je recommande la playlist douce.") is None
+    assert _extraire_json("") is None
+    assert _extraire_json(None) is None
+
+
+@pytest.mark.asyncio
+async def test_repli_sans_structure_quand_le_modele_refuse(coordinator):
+    """Régression : « Error with Ollama structured response ».
+
+    Tous les modèles ne savent pas produire une réponse conforme à un schéma.
+    Chaque fonction reposant sur une structure — choix de musique, suggestion
+    d'heure, vérification du lever — échouait alors définitivement. On redemande
+    désormais la même chose en texte libre, en réclamant du JSON.
+    """
+    from custom_components.smartwake.ai import _call_ai_task
+
+    appels = []
+
+    async def _call(domain, service, data=None, **kw):
+        appels.append("structure" if "structure" in (data or {}) else "libre")
+        if "structure" in (data or {}):
+            raise Exception("Error with Ollama structured response")
+        return {"data": '```json\n{"source":"douce"}\n```'}
+
+    coordinator.hass.services.async_call = _call
+
+    res = await _call_ai_task(
+        coordinator.hass, "Choix musique", "choisis", {"source": {}}, cfg={}
+    )
+    assert appels == ["structure", "libre"], f"séquence inattendue : {appels}"
+    assert res == {"data": {"source": "douce"}}
+
+
+@pytest.mark.asyncio
+async def test_repli_refuse_une_reponse_incomplete(coordinator):
+    """Une réponse amputée d'une clé attendue ne doit pas être utilisée."""
+    from custom_components.smartwake.ai import _call_ai_task
+
+    async def _call(domain, service, data=None, **kw):
+        if "structure" in (data or {}):
+            raise Exception("Error with Ollama structured response")
+        return {"data": '{"heure_proposee":"06:45"}'}
+
+    coordinator.hass.services.async_call = _call
+    res = await _call_ai_task(
+        coordinator.hass, "Heure", "calcule",
+        {"heure_proposee": {}, "decaler": {}, "raison": {}}, cfg={},
+    )
+    assert res is None
+
+
+@pytest.mark.asyncio
+async def test_pas_de_repli_sans_structure_demandee(coordinator):
+    """Un appel sans structure ne doit pas être rejoué inutilement."""
+    from custom_components.smartwake.ai import _call_ai_task
+
+    appels = []
+
+    async def _call(domain, service, data=None, **kw):
+        appels.append(1)
+        raise Exception("modèle indisponible")
+
+    coordinator.hass.services.async_call = _call
+    assert await _call_ai_task(coordinator.hass, "Briefing", "x", cfg={}) is None
+    assert len(appels) == 1

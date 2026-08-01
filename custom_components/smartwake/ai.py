@@ -6,7 +6,9 @@ L'IA ne déclenche jamais la sonnerie — fallback systématique si IA indisponi
 
 from __future__ import annotations
 
+import json
 import logging
+import re
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -56,6 +58,55 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
+def _extraire_json(texte: str) -> dict[str, Any] | None:
+    """Extrait un objet JSON d'une réponse textuelle.
+
+    Les modèles encadrent volontiers leur JSON de texte ou de balises de code.
+    """
+    if not isinstance(texte, str):
+        return None
+    bloc = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", texte, re.S)
+    candidats = [bloc.group(1)] if bloc else []
+    accolade = re.search(r"\{.*\}", texte, re.S)
+    if accolade:
+        candidats.append(accolade.group(0))
+    for brut in candidats:
+        try:
+            valeur = json.loads(brut)
+            if isinstance(valeur, dict):
+                return valeur
+        except json.JSONDecodeError:
+            continue
+    return None
+
+
+async def _appel_ai_task(
+    hass: HomeAssistant,
+    task_name: str,
+    instructions: str,
+    structure: dict | None,
+    attachments: dict | None,
+    cfg: dict | None,
+) -> dict[str, Any]:
+    """Appel brut du service, sans rattrapage."""
+    data: dict[str, Any] = {"task_name": task_name, "instructions": instructions}
+    if structure:
+        data["structure"] = structure
+    if attachments:
+        data["attachments"] = attachments
+
+    # L'entité ai_task choisie par l'utilisateur n'était jamais transmise
+    entity_id = (cfg or {}).get(CONF_AI_TASK_ENTITY)
+    if entity_id:
+        data["entity_id"] = entity_id
+
+    # return_response=True exige blocking=True : Home Assistant lève sinon
+    # ServiceValidationError.
+    return await hass.services.async_call(
+        "ai_task", "generate_data", data, blocking=True, return_response=True,
+    )
+
+
 async def _call_ai_task(
     hass: HomeAssistant,
     task_name: str,
@@ -64,38 +115,62 @@ async def _call_ai_task(
     attachments: dict | None = None,
     cfg: dict | None = None,
 ) -> dict[str, Any] | None:
-    """Appelle ai_task.generate_data avec fallback silencieux.
+    """Appelle ai_task.generate_data, avec repli sans réponse structurée.
 
-    `return_response=True` exige `blocking=True` : Home Assistant lève sinon
-    ServiceValidationError. L'exception étant capturée plus bas, toutes les
-    fonctionnalités IA échouaient silencieusement.
+    Tous les modèles ne savent pas produire une réponse conforme à un schéma.
+    Ollama échoue ainsi par « Error with Ollama structured response », ce qui
+    rendait inopérantes toutes les fonctions reposant sur une structure : choix
+    de musique, suggestion d'heure et vérification du lever. On redemande alors
+    la même chose en texte libre, en réclamant du JSON dans les instructions,
+    puis on l'extrait de la réponse.
     """
     try:
-        data: dict[str, Any] = {
-            "task_name": task_name,
-            "instructions": instructions,
-        }
-        if structure:
-            data["structure"] = structure
-        if attachments:
-            data["attachments"] = attachments
-
-        # L'entité ai_task choisie par l'utilisateur n'était jamais transmise
-        entity_id = (cfg or {}).get(CONF_AI_TASK_ENTITY)
-        if entity_id:
-            data["entity_id"] = entity_id
-
-        result = await hass.services.async_call(
-            "ai_task", "generate_data",
-            data,
-            blocking=True,
-            return_response=True,
+        resultat = await _appel_ai_task(
+            hass, task_name, instructions, structure, attachments, cfg
         )
         _LOGGER.info("AI Task '%s' réussi", task_name)
-        return result
+        return resultat
     except Exception as exc:
-        _LOGGER.warning("AI Task '%s' échoué (fallback): %s", task_name, exc)
+        if not structure:
+            _LOGGER.warning("AI Task '%s' échoué (repli): %s", task_name, exc)
+            return None
+        _LOGGER.debug(
+            "AI Task '%s' : réponse structurée refusée (%s), nouvelle tentative "
+            "en texte libre", task_name, exc,
+        )
+
+    cles = ", ".join(f'"{c}"' for c in structure)
+    consigne = (
+        f"{instructions}\n\n"
+        "Réponds uniquement par un objet JSON valide, sans commentaire ni "
+        f"balise de code, contenant exactement ces clés : {cles}."
+    )
+    try:
+        brut = await _appel_ai_task(
+            hass, task_name, consigne, None, attachments, cfg
+        )
+    except Exception as exc:
+        _LOGGER.warning("AI Task '%s' échoué (repli): %s", task_name, exc)
         return None
+
+    texte = brut.get("data") if isinstance(brut, dict) else brut
+    valeur = _extraire_json(texte if isinstance(texte, str) else str(texte))
+    if valeur is None:
+        _LOGGER.warning(
+            "AI Task '%s' : réponse du modèle inexploitable en JSON", task_name
+        )
+        return None
+
+    manquantes = [c for c in structure if c not in valeur]
+    if manquantes:
+        _LOGGER.warning(
+            "AI Task '%s' : clés absentes de la réponse (%s)",
+            task_name, ", ".join(manquantes),
+        )
+        return None
+
+    _LOGGER.info("AI Task '%s' réussi (repli sans structure)", task_name)
+    return {"data": valeur}
 
 
 def contexte_travail(hass: HomeAssistant, cfg: dict) -> dict[str, Any]:

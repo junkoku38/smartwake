@@ -1443,6 +1443,36 @@ class ReveilCoordinator(DataUpdateCoordinator):
         except Exception as exc:
             _LOGGER.error("Erreur lumière: %s", exc)
 
+    def _service_notify(self, cible: str) -> str | None:
+        """Service notify historique correspondant à une cible de notification.
+
+        Seul ce service accepte une clé `data`, donc des boutons d'action. Or
+        une entité `notify.<objet>` est fournie par une plateforme dont le
+        service s'appelle `<plateforme>_<objet>` : pour l'application mobile,
+        l'entité `notify.sm_g991u1` correspond au service
+        `notify.mobile_app_sm_g991u1`. Chercher `notify.sm_g991u1` échouait donc,
+        et les notifications partaient sans boutons.
+        """
+        if not cible:
+            return None
+        objet = cible.split(".", 1)[1] if "." in cible else cible
+
+        candidats: list[str] = []
+        try:
+            from homeassistant.helpers import entity_registry as er
+
+            entree = er.async_get(self.hass).async_get(cible)
+            if entree is not None and entree.platform:
+                candidats.append(f"{entree.platform}_{objet}")
+        except Exception as exc:  # noqa: BLE001 - le registre est indicatif
+            _LOGGER.debug("Registre d'entités indisponible: %s", exc)
+
+        candidats += [f"mobile_app_{objet}", objet]
+        for nom in dict.fromkeys(candidats):
+            if self.hass.services.has_service("notify", nom):
+                return nom
+        return None
+
     async def _notifier(
         self,
         cible: str | None,
@@ -1461,13 +1491,13 @@ class ReveilCoordinator(DataUpdateCoordinator):
         if not cible:
             return False
 
-        service = cible.split(".", 1)[1] if cible.startswith("notify.") else cible
+        service = self._service_notify(cible)
         charge: dict[str, Any] = {"title": titre, "message": message}
         if actions:
             charge["data"] = {"actions": actions}
 
         # Service historique : seul chemin qui accepte les actions
-        if self.hass.services.has_service("notify", service):
+        if service:
             try:
                 await self.hass.services.async_call(
                     "notify", service, charge, blocking=True
@@ -1480,10 +1510,10 @@ class ReveilCoordinator(DataUpdateCoordinator):
         # Repli : entity service, sans les boutons d'action
         if actions:
             _LOGGER.warning(
-                "Service notify.%s introuvable — notification envoyée sans "
-                "boutons d'action", service,
+                "Aucun service notify historique pour « %s » — notification "
+                "envoyée sans boutons Snooze/Stop", cible,
             )
-        entite = cible if cible.startswith("notify.") else f"notify.{service}"
+        entite = cible if cible.startswith("notify.") else f"notify.{cible}"
         try:
             await self.hass.services.async_call(
                 "notify", "send_message",
