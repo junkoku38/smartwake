@@ -2087,10 +2087,10 @@ class ReveilCoordinator(DataUpdateCoordinator):
                     self.hass, cfg, self.snooze_count, "test manuel"
                 )
             elif tache == "lever":
+                probleme = ai.diagnostic_presence_lit(self.hass, cfg)
+                if probleme:
+                    return probleme
                 res = await ai.verify_person_in_bed(self.hass, cfg)
-                if res is None:
-                    return ("Aucun capteur de présence au lit exploitable. "
-                            "Renseignez-en un dans la section Intelligence.")
                 res = "Une personne est au lit" if res else "Personne au lit"
             elif tache == "personnalisees":
                 messages = []

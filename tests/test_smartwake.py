@@ -2892,3 +2892,65 @@ def test_service_tester_ia_declare():
                               encoding="utf-8"))
     assert "tester_ia" in services
     assert "tache" in services["tester_ia"]["fields"]
+
+
+# ── Diagnostic de présence au lit ──────────────────────────────
+
+def _hass_etats(mapping):
+    from unittest.mock import MagicMock
+
+    class _E:
+        def __init__(self, state):
+            self.state = state
+
+    h = MagicMock()
+    h.states.get = lambda e: _E(mapping[e]) if e in mapping else None
+    return h
+
+
+def test_diagnostic_presence_lit_distingue_les_causes():
+    """Régression : « Aucun capteur de présence au lit exploitable » était
+    affiché aussi bien pour une absence de capteur que pour des capteurs
+    configurés mais hors ligne — trompeur quand le capteur existe mais que
+    Withings ne l'a pas encore synchronisé."""
+    from custom_components.smartwake.ai import diagnostic_presence_lit
+
+    # Aucun capteur : le message invite à en configurer un
+    msg = diagnostic_presence_lit(_hass_etats({}), {})
+    assert "Aucun capteur" in msg and "configuré" in msg
+
+    # Capteurs configurés mais tous indisponibles : cause distincte
+    msg = diagnostic_presence_lit(
+        _hass_etats({"binary_sensor.w1": "unavailable"}),
+        {"presence_lit_sensors": ["binary_sensor.w1"]},
+    )
+    assert "configuré" in msg and "exploitable" in msg
+    assert "binary_sensor.w1" in msg  # l'entité fautive est nommée
+
+    # Au moins un capteur exploitable : aucun problème
+    assert diagnostic_presence_lit(
+        _hass_etats({"binary_sensor.matelas": "off"}),
+        {"presence_lit_sensors": ["binary_sensor.matelas"]},
+    ) is None
+
+    # Compatibilité avec les anciennes clés Withings
+    assert diagnostic_presence_lit(
+        _hass_etats({"binary_sensor.w": "on"}),
+        {"withings_bed_1": "binary_sensor.w"},
+    ) is None
+
+
+@pytest.mark.asyncio
+async def test_test_lever_signale_capteur_hors_ligne(coordinator):
+    """Le test « Vérification du lever » doit expliquer qu'un capteur est hors
+    ligne, et non prétendre qu'aucun n'est configuré."""
+    coordinator.entry.data = {
+        **coordinator.entry.data,
+        "ai_verif_lever": True,
+        "presence_lit_sensors": ["binary_sensor.withings_in_bed"],
+    }
+    coordinator.hass.states.set("binary_sensor.withings_in_bed", "unavailable")
+
+    res = await coordinator.tester_ia("lever")
+    assert "exploitable" in res
+    assert "withings_in_bed" in res

@@ -513,6 +513,45 @@ donnée absente."""
     return None
 
 
+
+def diagnostic_presence_lit(hass: HomeAssistant, cfg: dict) -> str | None:
+    """Explique pourquoi la détection de présence au lit ne peut pas aboutir.
+
+    Renvoie None si tout est exploitable, sinon un message actionnable. Les
+    trois causes — aucun capteur, capteurs tous indisponibles, valeurs
+    ininterprétables — donnaient le même message «\u00a0aucun capteur
+    exploitable\u00a0», trompeur quand un capteur est bien configuré mais hors
+    ligne.
+    """
+    capteurs = list(cfg.get(CONF_PRESENCE_LIT_SENSORS) or [])
+    for ancienne in (CONF_WITHINGS_BED_1, CONF_WITHINGS_BED_2):
+        valeur = cfg.get(ancienne)
+        if valeur and valeur not in capteurs:
+            capteurs.append(valeur)
+
+    if not capteurs:
+        return ("Aucun capteur de présence au lit configuré. Renseignez-en un "
+                "dans la section Intelligence.")
+
+    indisponibles = []
+    exploitables = 0
+    for entity_id in capteurs:
+        etat = hass.states.get(entity_id)
+        if etat is None:
+            indisponibles.append(f"{entity_id} (introuvable)")
+        elif etat.state in ("unknown", "unavailable"):
+            indisponibles.append(f"{entity_id} ({etat.state})")
+        else:
+            exploitables += 1
+
+    if exploitables == 0:
+        return ("Capteur(s) de présence au lit configuré(s), mais aucun n'est "
+                "exploitable actuellement : " + ", ".join(indisponibles) + ". "
+                "Un capteur Withings ne publie son état qu'après une nuit "
+                "synchronisée.")
+    return None
+
+
 async def verify_person_in_bed(
     hass: HomeAssistant, cfg: dict
 ) -> bool | None:
