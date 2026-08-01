@@ -2303,19 +2303,41 @@ async def test_repli_refuse_une_reponse_incomplete(coordinator):
 
 
 @pytest.mark.asyncio
-async def test_pas_de_repli_sans_structure_demandee(coordinator):
-    """Un appel sans structure ne doit pas être rejoué inutilement."""
+async def test_repli_sans_structure_si_ollama_echoue(coordinator):
+    """Ollama échoue même sans structure (« Failed to parse JSON »).
+    Le repli texte libre doit récupérer le message."""
     from custom_components.smartwake.ai import _call_ai_task
 
     appels = []
 
     async def _call(domain, service, data=None, **kw):
         appels.append(1)
-        raise Exception("modèle indisponible")
+        # Premier appel : Ollama échoue sur le JSON
+        # Deuxième appel (repli texte) : réussit
+        if len(appels) == 1:
+            raise Exception("Failed to parse JSON response: unexpected character")
+        return {"response": {"data": "Bonjour, il fait beau aujourd'hui !"}}
+
+    coordinator.hass.services.async_call = _call
+    result = await _call_ai_task(coordinator.hass, "Briefing", "x", cfg={})
+    assert result is not None
+    assert result["data"] == "Bonjour, il fait beau aujourd'hui !"
+    assert len(appels) == 2  # appel initial + repli
+
+
+async def test_pas_de_repli_si_modele_indisponible(coordinator):
+    """Si le modèle est vraiment indisponible, le repli ne sert à rien."""
+    from custom_components.smartwake.ai import _call_ai_task
+
+    appels = []
+
+    async def _call(domain, service, data=None, **kw):
+        appels.append(1)
+        raise Exception("Connection refused")
 
     coordinator.hass.services.async_call = _call
     assert await _call_ai_task(coordinator.hass, "Briefing", "x", cfg={}) is None
-    assert len(appels) == 1
+    assert len(appels) == 2  # appel initial + repli échoué
 
 
 # ── Compte à rebours du snooze ─────────────────────────────────

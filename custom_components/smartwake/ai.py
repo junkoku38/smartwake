@@ -150,8 +150,27 @@ async def _call_ai_task(
         return resultat
     except Exception as exc:
         if not structure:
-            _LOGGER.warning("AI Task '%s' échoué (repli): %s", task_name, exc)
-            return None
+            # Ollama échoue même sans structure (« Failed to parse JSON
+            # response »). On tente une récupération en texte libre.
+            _LOGGER.debug(
+                "AI Task '%s' échoué (%s), nouvelle tentative en texte libre",
+                task_name, exc,
+            )
+            try:
+                brut = await _appel_ai_task(
+                    hass, task_name, instructions, None, attachments, cfg
+                )
+            except Exception as exc2:
+                _LOGGER.warning("AI Task '%s' échoué (repli): %s", task_name, exc2)
+                return None
+            # Le texte libre est dans response.data
+            if isinstance(brut, dict):
+                resp = brut.get("response", brut)
+                if isinstance(resp, dict) and "data" in resp:
+                    return {"data": resp["data"]}
+                if "data" in brut:
+                    return {"data": brut["data"]}
+            return brut
         _LOGGER.debug(
             "AI Task '%s' : réponse structurée refusée (%s), nouvelle tentative "
             "en texte libre", task_name, exc,
