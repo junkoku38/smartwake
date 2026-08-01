@@ -68,6 +68,12 @@ from .const import (
     CONF_LEVER_ANTICIPE,
     CONF_LUMIERE,
     CONF_LUMIERE_ACTIVEE,
+    CONF_LUMIERE_COULEUR,
+    CONF_LUMIERE_COURBE,
+    CONF_LUMIERE_SCENE,
+    CONF_LUMIERE_TEMP_COULEUR,
+    COURBE_DOUCE,
+    COURBES_OPTIONS,
     CONF_MOUVEMENT_CUISINE,
     CONF_MOUVEMENT_SDB,
     CONF_MOUVEMENT_STOP,
@@ -632,6 +638,22 @@ class SmartWAKEOptionsFlow(config_entries.OptionsFlow):
         schema = vol.Schema({
                 vol.Required(CONF_LUMIERE_ACTIVEE, default=data.get(CONF_LUMIERE_ACTIVEE, True)): bool,
                 vol.Optional(CONF_LUMIERE): _entity("light"),
+                vol.Optional(CONF_LUMIERE_COULEUR): selector.ColorRGBSelector(),
+                vol.Optional(CONF_LUMIERE_TEMP_COULEUR): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=2000, max=6500, step=50,
+                        mode=selector.NumberSelectorMode.SLIDER,
+                        unit_of_measurement="K",
+                    )
+                ),
+                vol.Required(CONF_LUMIERE_COURBE, default=data.get(CONF_LUMIERE_COURBE, COURBE_DOUCE)): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[selector.SelectOptionDict(value=k, label=v)
+                                 for k, v in COURBES_OPTIONS.items()],
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Optional(CONF_LUMIERE_SCENE): _entity("scene"),
                 vol.Optional(CONF_BRIGHTNESS_MAX, default=data.get(CONF_BRIGHTNESS_MAX, DEFAULT_BRIGHTNESS_MAX)): _num(1, 255, 1),
                 vol.Optional(CONF_DUREE_PROGRESSIVE, default=data.get(CONF_DUREE_PROGRESSIVE, DEFAULT_DUREE_PROGRESSIVE)): _num(5, 60, 1, "min"),
                 vol.Optional(CONF_AUBE_MIN, default=data.get(CONF_AUBE_MIN, DEFAULT_AUBE_MIN)): _num(0, 60, 5, "min"),

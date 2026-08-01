@@ -131,3 +131,11 @@ class DurationSelector(_Validator):
 
 class DurationSelectorConfig(_Config):
     pass
+
+
+class ColorRGBSelector(_Validator):
+    pass
+
+
+class ColorTempSelector(_Validator):
+    pass

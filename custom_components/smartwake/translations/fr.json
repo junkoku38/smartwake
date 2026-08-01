@@ -117,14 +117,22 @@
           "lumiere": "Lumière",
           "brightness_max": "Luminosité max (1-255)",
           "duree_progressive": "Durée éclairage (min)",
-          "aube_min": "Aube avant l'heure H (min)"
+          "aube_min": "Aube avant l'heure H (min)",
+          "lumiere_couleur": "Couleur de la lumière",
+          "lumiere_temp_couleur": "Température de couleur",
+          "lumiere_courbe": "Forme de la montée",
+          "lumiere_scene": "Scène en fin de montée"
         },
         "data_description": {
           "lumiere_activee": "Active la simulation d'aube — la lumière augmente progressivement.",
           "lumiere": "La lampe de chambre qui servira pour l'aube progressive.",
           "brightness_max": "Luminosité maximale atteinte (1-255, 255 = 100%).",
           "duree_progressive": "Durée totale de l'augmentation de luminosité, en minutes.",
-          "aube_min": "L'aube démarre X minutes avant l'heure du réveil (ex : 20 = l'aube commence à H-20min)."
+          "aube_min": "L'aube démarre X minutes avant l'heure du réveil (ex : 20 = l'aube commence à H-20min).",
+          "lumiere_couleur": "Laissez vide pour ne pas imposer de couleur. Une couleur explicite prime sur la température ci-dessous, Home Assistant refusant les deux à la fois.",
+          "lumiere_temp_couleur": "2000 K pour une lumière très chaude proche du lever de soleil, 6500 K pour une lumière froide. Sans effet si une couleur est choisie.",
+          "lumiere_courbe": "La montée douce paraît plus naturelle : l'œil perçoit mal les écarts dans les niveaux bas.",
+          "lumiere_scene": "Appliquée une fois la luminosité maximale atteinte. Permet une ambiance sur plusieurs lampes, que la montée d'une seule luminosité ne sait pas rendre."
         }
       },
       "confort": {

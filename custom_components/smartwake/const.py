@@ -83,8 +83,20 @@ CONF_VOLETS = "volets"
 CONF_VOLETS_SOLEIL = "volets_soleil"
 CONF_VOLETS_POSITION = "volets_position"
 CONF_VOLETS_SOLEIL_LEVER = "volets_soleil_lever"
+# Couleur de la lumière de réveil. La température de couleur était déjà lue par
+# la rampe, mais aucun champ ne permettait de la renseigner.
+CONF_LUMIERE_COULEUR = "lumiere_couleur"
+# Scène appliquée lorsque la rampe atteint son maximum
 CONF_LUMIERE_SCENE = "lumiere_scene"
+# Forme de la montée : linéaire, ou douce au démarrage
 CONF_LUMIERE_COURBE = "lumiere_courbe"
+
+COURBE_LINEAIRE = "lineaire"
+COURBE_DOUCE = "douce"
+COURBES_OPTIONS = {
+    COURBE_DOUCE: "Douce — progression lente au début, plus franche ensuite",
+    COURBE_LINEAIRE: "Linéaire — progression régulière",
+}
 CONF_NOTIFICATION_ACTIVEE = "notification_activee"
 CONF_NOTIFY_DEVICE = "notify_device"
 CONF_NOTIF_TITRE = "notif_titre"

@@ -2568,3 +2568,115 @@ async def test_test_ia_musique_exige_deux_playlists(coordinator):
     flow, captures = _flow_options(coordinator)
     await flow.async_step_test_ia({"tache": "musique"})
     assert "deux playlists" in captures["description_placeholders"]["resultat"]
+
+
+# ── Couleur, courbe et scène de la lumière de réveil ───────────
+
+def test_couleur_de_lumiere():
+    """Régression : la température de couleur était lue par la rampe mais
+    aucun champ ne permettait de la renseigner. Aucune couleur n'était donc
+    jamais appliquée."""
+    from custom_components.smartwake.coordinator import ReveilCoordinator
+
+    f = ReveilCoordinator._couleur_lumiere
+    # Home Assistant refuse couleur et température ensemble : la couleur prime
+    assert f({"lumiere_couleur": [255, 180, 80], "lumiere_temp_couleur": 2700}) \
+        == {"rgb_color": [255, 180, 80]}
+    assert f({"lumiere_temp_couleur": 2700}) == {"color_temp_kelvin": 2700}
+    assert f({}) == {}
+    # Valeurs illisibles : on n'impose rien plutôt que de faire échouer l'appel
+    assert f({"lumiere_couleur": "nawak"}) == {}
+    assert f({"lumiere_temp_couleur": "abc"}) == {}
+
+
+@pytest.mark.asyncio
+async def test_couleur_appliquee_a_chaque_pas(coordinator):
+    coordinator.entry.data = {
+        **coordinator.entry.data,
+        "lumiere": "light.chambre", "lumiere_activee": True,
+        "brightness_max": 200, "duree_progressive": 10,
+        "lumiere_couleur": [255, 180, 80],
+    }
+    charges = []
+
+    async def _call(domain, service, data=None, **kw):
+        if service == "turn_on":
+            charges.append(data or {})
+
+    coordinator.hass.services.async_call = _call
+    tache = asyncio.ensure_future(coordinator._cycle_lumiere_progressive())
+    await asyncio.sleep(0.02)
+    tache.cancel()
+
+    assert charges, "aucun appel émis"
+    assert all(c.get("rgb_color") == [255, 180, 80] for c in charges)
+    assert not any("color_temp_kelvin" in c for c in charges)
+
+
+@pytest.mark.asyncio
+async def test_courbe_douce_demarre_plus_bas(coordinator):
+    """Une montée quadratique paraît plus naturelle : l'œil perçoit mal les
+    écarts dans les niveaux bas."""
+    async def premier_pas(courbe):
+        coordinator.entry.data = {
+            **coordinator.entry.data,
+            "lumiere": "light.chambre", "lumiere_activee": True,
+            "brightness_max": 200, "duree_progressive": 10,
+            "lumiere_courbe": courbe,
+        }
+        coordinator._aube_niveau = 0
+        niveaux = []
+
+        async def _call(domain, service, data=None, **kw):
+            if service == "turn_on":
+                niveaux.append((data or {}).get("brightness"))
+
+        coordinator.hass.services.async_call = _call
+        tache = asyncio.ensure_future(coordinator._cycle_lumiere_progressive())
+        await asyncio.sleep(0.02)
+        tache.cancel()
+        return niveaux[0]
+
+    assert await premier_pas("douce") < await premier_pas("lineaire")
+
+
+@pytest.mark.asyncio
+async def test_scene_appliquee_en_fin_de_montee(coordinator):
+    """La scène permet une ambiance sur plusieurs lampes, que la montée d'une
+    seule luminosité ne sait pas rendre."""
+    coordinator.entry.data = {
+        **coordinator.entry.data,
+        "lumiere": "light.chambre", "lumiere_activee": True,
+        "brightness_max": 10, "duree_progressive": 1,
+        "lumiere_scene": "scene.reveil_doux",
+    }
+    scenes = []
+
+    async def _call(domain, service, data=None, **kw):
+        if domain == "scene":
+            scenes.append((data or {}).get("entity_id"))
+
+    coordinator.hass.services.async_call = _call
+    await coordinator._cycle_lumiere_progressive()
+    assert scenes == ["scene.reveil_doux"]
+
+
+@pytest.mark.asyncio
+async def test_scenes_du_matin_declenchees_par_la_liste(coordinator):
+    """Régression : l'activation dépendait d'un booléen absent du formulaire.
+    Les scènes choisies ne se déclenchaient donc jamais."""
+    src = open("custom_components/smartwake/coordinator.py", encoding="utf-8").read()
+    assert "cfg.get(CONF_SCENE_MATIN_ENTITIES) or cfg.get(CONF_SCENES_MATIN" in src, (
+        "une liste renseignée doit suffire à activer les scènes du matin"
+    )
+
+
+def test_champs_lumiere_presents_dans_le_formulaire():
+    """Régression : trois constantes de lumière étaient définies sans champ,
+    donc inatteignables — même situation que la phase de sommeil retirée."""
+    src = open("custom_components/smartwake/config_flow.py", encoding="utf-8").read()
+    for cle in ("CONF_LUMIERE_COULEUR", "CONF_LUMIERE_TEMP_COULEUR",
+                "CONF_LUMIERE_COURBE", "CONF_LUMIERE_SCENE"):
+        assert f"vol.Optional({cle})" in src or f"vol.Required({cle}," in src, (
+            f"{cle} n'a pas de champ dans le formulaire"
+        )

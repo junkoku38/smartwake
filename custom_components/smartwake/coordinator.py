@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 from datetime import date, datetime, time, timedelta
 from typing import Any, Callable
 
@@ -69,7 +70,11 @@ from .const import (
     CONF_LEVER_ANTICIPE,
     CONF_LUMIERE,
     CONF_LUMIERE_ACTIVEE,
+    CONF_LUMIERE_COULEUR,
+    CONF_LUMIERE_COURBE,
+    CONF_LUMIERE_SCENE,
     CONF_LUMIERE_TEMP_COULEUR,
+    COURBE_DOUCE,
     CONF_MOUVEMENT_CUISINE,
     CONF_MOUVEMENT_SDB,
     CONF_MOUVEMENT_STOP,
@@ -1156,7 +1161,10 @@ class ReveilCoordinator(DataUpdateCoordinator):
             )
 
         # 5. Scène matin et tâches IA
-        if cfg.get(CONF_SCENES_MATIN, False):
+        # L'activation était conditionnée à un booléen sans champ dans le
+        # formulaire : les scènes choisies ne se déclenchaient donc jamais. Une
+        # liste renseignée suffit désormais.
+        if cfg.get(CONF_SCENE_MATIN_ENTITIES) or cfg.get(CONF_SCENES_MATIN, False):
             try:
                 await self._activer_scene_matin()
             except Exception as exc:
@@ -1418,6 +1426,29 @@ class ReveilCoordinator(DataUpdateCoordinator):
             except Exception as exc:
                 _LOGGER.error("Erreur escalade lumière: %s", exc)
 
+    @staticmethod
+    def _couleur_lumiere(cfg: dict) -> dict[str, Any]:
+        """Paramètres de couleur pour light.turn_on.
+
+        Home Assistant refuse une couleur RVB et une température de couleur dans
+        le même appel : la couleur explicite prime.
+        """
+        rgb = cfg.get(CONF_LUMIERE_COULEUR)
+        if rgb:
+            try:
+                valeurs = [int(v) for v in rgb][:3]
+                if len(valeurs) == 3:
+                    return {"rgb_color": valeurs}
+            except (TypeError, ValueError):
+                _LOGGER.debug("Couleur de réveil illisible: %r", rgb)
+        kelvin = cfg.get(CONF_LUMIERE_TEMP_COULEUR)
+        if kelvin:
+            try:
+                return {"color_temp_kelvin": int(kelvin)}
+            except (TypeError, ValueError):
+                _LOGGER.debug("Température de couleur illisible: %r", kelvin)
+        return {}
+
     async def _cycle_lumiere_progressive(self) -> None:
         """Augmentation progressive de la luminosité jusqu'à la valeur réglée.
 
@@ -1431,7 +1462,8 @@ class ReveilCoordinator(DataUpdateCoordinator):
         lumiere = cfg[CONF_LUMIERE]
         brightness_max = max(1, min(255, int(cfg.get(CONF_BRIGHTNESS_MAX, DEFAULT_BRIGHTNESS_MAX))))
         duree = max(1, int(cfg.get(CONF_DUREE_PROGRESSIVE, DEFAULT_DUREE_PROGRESSIVE)))
-        temp_kelvin = cfg.get(CONF_LUMIERE_TEMP_COULEUR)
+        couleur = self._couleur_lumiere(cfg)
+        douce = cfg.get(CONF_LUMIERE_COURBE, COURBE_DOUCE) == COURBE_DOUCE
 
         # Un pas toutes les 30 s environ, borné pour rester raisonnable
         steps = max(1, min(brightness_max, duree * 2))
@@ -1441,20 +1473,39 @@ class ReveilCoordinator(DataUpdateCoordinator):
         # recommencer la montée depuis le début.
         depart = 1
         if self._aube_niveau > 0:
-            depart = min(steps, max(1, round(steps * self._aube_niveau / brightness_max)))
+            # Le point de reprise doit être l'inverse de la courbe employée,
+            # sans quoi une montée douce repartirait trop bas.
+            part = min(1.0, self._aube_niveau / brightness_max)
+            if douce:
+                part = math.sqrt(part)
+            depart = min(steps, max(1, round(steps * part)))
 
         try:
             for i in range(depart, steps + 1):
-                cible = max(1, round(brightness_max * i / steps))
+                # Une montée quadratique paraît plus naturelle qu'une montée
+                # linéaire, l'œil percevant mal les écarts dans les niveaux bas.
+                fraction = (i / steps) ** 2 if douce else i / steps
+                cible = max(1, round(brightness_max * fraction))
                 self._aube_niveau = cible
                 charge: dict[str, Any] = {"entity_id": lumiere, "brightness": cible}
-                if temp_kelvin:
-                    charge["color_temp_kelvin"] = int(temp_kelvin)
+                charge.update(couleur)
                 await self.hass.services.async_call(
                     "light", "turn_on", charge, blocking=True
                 )
                 if i < steps:
                     await asyncio.sleep(intervalle)
+
+            # Scène de fin : permet une ambiance riche sur plusieurs lampes,
+            # que la montée d'une seule luminosité ne sait pas rendre.
+            scene = cfg.get(CONF_LUMIERE_SCENE)
+            if scene:
+                try:
+                    await self.hass.services.async_call(
+                        "scene", "turn_on", {"entity_id": scene}, blocking=True
+                    )
+                    _LOGGER.info("Scène de réveil appliquée: %s", scene)
+                except Exception as exc:
+                    _LOGGER.error("Erreur scène de réveil: %s", exc)
             _LOGGER.info(
                 "Lumière progressive terminée pour '%s' (%d/255 en %d min)",
                 self.entry.title, brightness_max, duree,
