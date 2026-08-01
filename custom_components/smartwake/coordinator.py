@@ -877,10 +877,15 @@ class ReveilCoordinator(DataUpdateCoordinator):
         if now.weekday() not in jours:
             return False
 
-        # Jours fériés
-        if cfg.get(CONF_IGNORER_FERIES, True) and cfg.get(CONF_WORKDAY_SENSOR):
-            state = self.hass.states.get(cfg[CONF_WORKDAY_SENSOR])
-            if state and state.state == "off":
+        # Jours fériés : le code vérifiait le workday_sensor, qui vaut « off »
+        # le weekend. Or « off » signifie « pas un jour travaillé », pas « jour
+        # férié ». Le code annulait donc le réveil tous les jours non travaillés,
+        # y compris le weekend. On vérifie maintenant binary_sensor.jour_ferie
+        # (interne), qui vaut « on » uniquement les jours fériés.
+        if cfg.get(CONF_IGNORER_FERIES, True):
+            entite_ferie = f"binary_sensor.{self._base}_jour_ferie"
+            state = self.hass.states.get(entite_ferie)
+            if state and state.state == "on":
                 return False
 
         # Vacances scolaires
