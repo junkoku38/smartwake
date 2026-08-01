@@ -12,7 +12,16 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from homeassistant.exceptions import HomeAssistantError
 
-from .const import CONF_JOURS, CONF_JOURS_PERSO, CONF_MODE_HEURE, DOMAIN, JOURS_OPTIONS
+from .const import (
+    CONF_JOURS,
+    CONF_JOURS_PERSO,
+    CONF_MODE_HEURE,
+    CONF_MODE_TRAVAIL,
+    DOMAIN,
+    JOURS_OPTIONS,
+    MODE_TRAVAIL_INDETERMINE,
+    MODE_TRAVAIL_OPTIONS,
+)
 from .coordinator import ReveilCoordinator
 from .entity import make_device_info
 
@@ -33,6 +42,12 @@ MODE_HEURE_DESC = SelectEntityDescription(
 # Doit rester aligné sur _calculer_prochain() du coordinator
 MODE_HEURE_OPTIONS = ["unique", "par_jour"]
 
+MODE_TRAVAIL_DESC = SelectEntityDescription(
+    key="mode_travail",
+    name="Mode travail",
+    icon="mdi:briefcase-clock",
+)
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -43,6 +58,7 @@ async def async_setup_entry(
     async_add_entities([
         ReveilSelect(coordinator, entry, SELECT_DESC),
         ReveilModeHeureSelect(coordinator, entry, MODE_HEURE_DESC),
+        ReveilModeTravailSelect(coordinator, entry, MODE_TRAVAIL_DESC),
     ])
 
 
@@ -106,6 +122,41 @@ class ReveilModeHeureSelect(SelectEntity):
     async def async_select_option(self, option: str) -> None:
         if option in MODE_HEURE_OPTIONS:
             await self.coordinator.set_config_value(CONF_MODE_HEURE, option)
+
+    async def async_added_to_hass(self) -> None:
+        self.async_on_remove(self.coordinator.async_add_listener(self._handle_update))
+
+    def _handle_update(self) -> None:
+        self.async_write_ha_state()
+
+class ReveilModeTravailSelect(SelectEntity):
+    """Mode de travail, pilotable depuis un tableau de bord ou une automatisation.
+
+    N'était modifiable que dans les options. L'exposer en entité permet de le
+    basculer sans passer par le menu de configuration — utile pour un rythme qui
+    change au jour le jour.
+    """
+
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(self, coordinator, entry, description):
+        self.coordinator = coordinator
+        self.entity_description = description
+        self._attr_unique_id = f"{entry.entry_id}_select_mode_travail"
+        self._attr_has_entity_name = True
+        self._attr_name = description.name
+        self._attr_icon = description.icon
+        self._attr_options = list(MODE_TRAVAIL_OPTIONS)
+        self._attr_should_poll = False
+        self._attr_device_info = make_device_info(entry)
+
+    @property
+    def current_option(self) -> str | None:
+        return self.coordinator.config.get(CONF_MODE_TRAVAIL, MODE_TRAVAIL_INDETERMINE)
+
+    async def async_select_option(self, option: str) -> None:
+        if option in MODE_TRAVAIL_OPTIONS:
+            await self.coordinator.set_config_value(CONF_MODE_TRAVAIL, option)
 
     async def async_added_to_hass(self) -> None:
         self.async_on_remove(self.coordinator.async_add_listener(self._handle_update))

@@ -112,6 +112,7 @@ entité. Pour un réveil nommé `reveil` :
 | `time.reveil_heure_lundi` … `_dimanche` | Heure propre à chaque jour (mode `par_jour`) |
 | `select.reveil_jours` | `tous` / `semaine` / `weekend` / `personnalise` |
 | `select.reveil_mode_heure` | `unique` ou `par_jour` |
+| `select.reveil_mode_travail` | `indetermine` / `presentiel` / `teletravail` |
 | `button.reveil_declencher` / `_stop` / `_sauter_prochain` / `_reset` | Actions immédiates |
 
 ### Sondes supervisables (binary_sensor)

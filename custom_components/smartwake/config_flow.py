@@ -96,6 +96,8 @@ from .const import (
     CONF_PLAYLIST_DOUCE,
     CONF_PLAYLIST_ENERGIQUE,
     CONF_PONCTUEL,
+    CONF_RATTRAPAGE_MIN,
+    DEFAULT_RATTRAPAGE_MIN,
     CONF_PRECHAUFFE_MIN,
     CONF_PRESENCE,
     CONF_RADIATEUR,
@@ -482,77 +484,11 @@ class SmartWAKEOptionsFlow(config_entries.OptionsFlow):
         )
 
     async def _executer_test_ia(self, tache: str) -> str:
-        """Lance une tâche IA et rend un compte rendu lisible."""
-        from . import ai
-        from .const import (
-            CONF_AI_BILAN_HEBDO, CONF_AI_BRIEFING, CONF_AI_MUSIQUE_ADAPT,
-            CONF_AI_SUGGESTION_HEURE, CONF_AI_VERIF_LEVER,
-        )
-
+        """Délègue au coordinator, qui porte la logique partagée avec le service."""
         coordinator = self.hass.data.get(DOMAIN, {}).get(self._config_entry.entry_id)
         if coordinator is None:
             return "Réveil non chargé — rechargez l'intégration."
-
-        # On force le drapeau de la fonctionnalité testée : le test doit
-        # fonctionner même si l'option n'est pas encore activée.
-        cfg = dict(self._config_entry.data)
-        drapeaux = {
-            "briefing": CONF_AI_BRIEFING,
-            "musique": CONF_AI_MUSIQUE_ADAPT,
-            "suggestion": CONF_AI_SUGGESTION_HEURE,
-            "bilan": CONF_AI_BILAN_HEBDO,
-            "lever": CONF_AI_VERIF_LEVER,
-        }
-        if tache in drapeaux:
-            cfg[drapeaux[tache]] = True
-
-        try:
-            if tache == "briefing":
-                res = await ai.generate_briefing(
-                    self.hass, cfg, self._config_entry.title
-                )
-            elif tache == "musique":
-                options = [coordinator._media_id(cfg.get(cle)) for cle in
-                           (CONF_PLAYLIST, CONF_PLAYLIST_DOUCE, CONF_PLAYLIST_ENERGIQUE)]
-                options = [o for o in dict.fromkeys(options) if o]
-                if len(options) < 2:
-                    return ("Au moins deux playlists sont nécessaires pour que "
-                            "l'IA ait un choix à faire. Renseignez « Playlist "
-                            "douce » ou « Playlist énergique » dans la section "
-                            "Musique.")
-                res = await ai.choose_adaptive_music(self.hass, cfg, options)
-            elif tache == "suggestion":
-                res = await ai.suggest_wake_time(
-                    self.hass, cfg, cfg.get(CONF_HEURE, "07:00")
-                )
-            elif tache == "bilan":
-                res = await ai.generate_weekly_report(
-                    self.hass, cfg, coordinator.snooze_count, "test manuel"
-                )
-            elif tache == "lever":
-                res = await ai.verify_person_in_bed(self.hass, cfg)
-                if res is None:
-                    return ("Aucun capteur de présence au lit exploitable. "
-                            "Renseignez-en un dans la section Intelligence.")
-                res = "Une personne est au lit" if res else "Personne au lit"
-            elif tache == "personnalisees":
-                messages = []
-                for declencheur in ("on_wake", "on_stop", "on_evening"):
-                    messages += [
-                        f"[{declencheur}] {m}"
-                        for m in await ai.run_custom_ai_task(self.hass, cfg, declencheur)
-                    ]
-                res = "\n".join(messages) if messages else None
-            else:
-                return f"Tâche inconnue : {tache}"
-        except Exception as exc:
-            return f"Échec : {type(exc).__name__} — {exc}"
-
-        if res is None:
-            return ("Aucun résultat. Vérifiez qu'une entité AI Task est "
-                    "sélectionnée dans la section AI Task, et consultez les "
-                    "journaux pour le détail.")
-        return str(res)
+        return await coordinator.tester_ia(tache)
 
     async def async_step_base(
         self, user_input: dict[str, Any] | None = None
@@ -590,6 +526,7 @@ class SmartWAKEOptionsFlow(config_entries.OptionsFlow):
                     )
                 ),
                 vol.Optional(CONF_PONCTUEL, default=data.get(CONF_PONCTUEL, False)): bool,
+                vol.Optional(CONF_RATTRAPAGE_MIN, default=data.get(CONF_RATTRAPAGE_MIN, DEFAULT_RATTRAPAGE_MIN)): _num(0, 60, 5, "min"),
                 vol.Optional(CONF_MODE_VACANCES, default=data.get(CONF_MODE_VACANCES, False)): bool,
                 vol.Optional(CONF_MODE_VACANCES_ENTITY): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain=["calendar", "input_boolean", "binary_sensor", "person"])

@@ -106,3 +106,8 @@ def callback(fn):
 class ServiceCall:
     def __init__(self, entity_id=None):
         self.entity_id = entity_id
+
+class SupportsResponse:
+    NONE = "none"
+    OPTIONAL = "optional"
+    ONLY = "only"

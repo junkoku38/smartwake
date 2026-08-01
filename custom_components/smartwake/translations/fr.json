@@ -65,7 +65,8 @@
           "heure_vendredi": "Heure du vendredi",
           "heure_samedi": "Heure du samedi",
           "heure_dimanche": "Heure du dimanche",
-          "mode_vacances_entity": "Entité de mode vacances"
+          "mode_vacances_entity": "Entité de mode vacances",
+          "rattrapage_min": "Rattrapage au démarrage (min)"
         },
         "data_description": {
           "heure": "L'heure à laquelle le réveil se déclenchera (ex : 07:00).",
@@ -76,7 +77,8 @@
           "mode_vacances": "Suspend ce réveil indéfiniment. Désactivez pour reprendre.",
           "mode_heure": "« Heure unique » applique la même heure tous les jours. « Heure par jour » utilise les sept heures ci-dessous.",
           "heure_lundi": "Utilisée uniquement en mode « Heure par jour ».",
-          "mode_vacances_entity": "Calendrier, input_boolean, binary_sensor ou personne. Le réveil ne sonne pas quand cette entité est « on »."
+          "mode_vacances_entity": "Calendrier, input_boolean, binary_sensor ou personne. Le réveil ne sonne pas quand cette entité est « on ».",
+          "rattrapage_min": "Si Home Assistant redémarre juste après l'heure du réveil (mise à jour, coupure), le réveil se déclenche quand même tant que le retard n'excède pas cette valeur. 0 pour désactiver."
         }
       },
       "musique": {

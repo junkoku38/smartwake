@@ -45,6 +45,8 @@ from .const import (
     CONF_HEURE_SAMEDI,
     CONF_HEURE_DIMANCHE,
     CONF_MODE_HEURE,
+    CONF_RATTRAPAGE_MIN,
+    DEFAULT_RATTRAPAGE_MIN,
     CONF_IGNORER_FERIES,
     CONF_IGNORER_VACANCES_SCOLAIRE,
     CONF_VACANCES_SCOLAIRES_CALENDAR,
@@ -282,6 +284,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
         # le réveil ne sonnait pas tant qu'un réglage n'avait pas été modifié.
         if self._actif:
             self._planifier_trigger()
+            self._rattraper_reveil_manque()
         await super().async_config_entry_first_refresh()
         # Watchdog : vérifier l'armement au démarrage HA
         self._watchdog()
@@ -291,6 +294,51 @@ class ReveilCoordinator(DataUpdateCoordinator):
         from .learning import LearningManager
         self._learning = LearningManager(self.hass, self.entry.entry_id)
         await self._learning.async_load()
+
+    @callback
+    def _rattraper_reveil_manque(self) -> None:
+        """Sonne malgré tout si un redémarrage a fait manquer l'heure de peu.
+
+        Sans cela, un redémarrage de Home Assistant juste avant le réveil — mise
+        à jour nocturne, coupure de courant — faisait purement et simplement
+        rater le réveil : l'occurrence du jour était considérée comme passée.
+        """
+        cfg = self.entry.data
+        tolerance = cfg.get(CONF_RATTRAPAGE_MIN, DEFAULT_RATTRAPAGE_MIN)
+        if tolerance <= 0:
+            return
+
+        now = dt_util.now()
+        heure = _parse_heure(cfg.get(CONF_HEURE, "07:00"))
+        if cfg.get(CONF_MODE_HEURE, "unique") == "par_jour":
+            heures = self._heures_par_jour()
+            if heures.get(now.weekday()):
+                heure = _parse_heure(heures[now.weekday()])
+
+        prevu = self._instant_local(now.date(), heure)
+        retard = (now - prevu).total_seconds() / 60
+
+        if 0 < retard <= tolerance and self._sonne_aujourd_hui(now) \
+                and not self._reveil_en_cours:
+            _LOGGER.warning(
+                "Réveil '%s' rattrapé : heure dépassée de %.0f min au démarrage "
+                "(tolérance %d min)", self.entry.title, retard, tolerance,
+            )
+            self._log_event(f"Réveil rattrapé (+{retard:.0f} min)")
+            self._cancel_cycle = self.hass.async_create_task(self._executer_cycle())
+
+    def _heures_par_jour(self) -> dict[int, str | None]:
+        """Heures configurées par jour de la semaine (0 = lundi)."""
+        cfg = self.entry.data
+        return {
+            0: cfg.get(CONF_HEURE_LUNDI),
+            1: cfg.get(CONF_HEURE_MARDI),
+            2: cfg.get(CONF_HEURE_MERCREDI),
+            3: cfg.get(CONF_HEURE_JEUDI),
+            4: cfg.get(CONF_HEURE_VENDREDI),
+            5: cfg.get(CONF_HEURE_SAMEDI),
+            6: cfg.get(CONF_HEURE_DIMANCHE),
+        }
 
     def _watchdog(self) -> None:
         """Vérifie au démarrage HA que l'alarme est cohérente + détecte les anomalies."""
@@ -793,15 +841,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
 
         # Heure par jour ou heure unique ?
         mode_heure = cfg.get(CONF_MODE_HEURE, "unique")
-        heures_par_jour = {
-            0: cfg.get(CONF_HEURE_LUNDI),
-            1: cfg.get(CONF_HEURE_MARDI),
-            2: cfg.get(CONF_HEURE_MERCREDI),
-            3: cfg.get(CONF_HEURE_JEUDI),
-            4: cfg.get(CONF_HEURE_VENDREDI),
-            5: cfg.get(CONF_HEURE_SAMEDI),
-            6: cfg.get(CONF_HEURE_DIMANCHE),
-        }
+        heures_par_jour = self._heures_par_jour()
 
         heure_defaut = _parse_heure(cfg.get(CONF_HEURE, "07:00"))
 
@@ -1994,6 +2034,70 @@ class ReveilCoordinator(DataUpdateCoordinator):
         self._planifier_trigger()
         self._notify()
         _LOGGER.info("Reset du réveil '%s'", self.entry.title)
+
+    async def tester_ia(self, tache: str) -> str:
+        """Exécute une tâche IA et rend un compte rendu lisible.
+
+        Les tâches IA ne se déclenchent qu'à des moments précis, ce qui rendait
+        leur mise au point laborieuse. Cette méthode les rend exécutables à la
+        demande, depuis le menu d'options comme depuis le service smartwake.tester_ia.
+        """
+        from . import ai
+
+        # On force le drapeau de la fonctionnalité testée : le test doit
+        # fonctionner même si l'option n'est pas encore activée.
+        cfg = dict(self.entry.data)
+        drapeaux = {
+            "briefing": CONF_AI_BRIEFING,
+            "musique": CONF_AI_MUSIQUE_ADAPT,
+            "suggestion": CONF_AI_SUGGESTION_HEURE,
+            "bilan": CONF_AI_BILAN_HEBDO,
+            "lever": CONF_AI_VERIF_LEVER,
+        }
+        if tache in drapeaux:
+            cfg[drapeaux[tache]] = True
+
+        try:
+            if tache == "briefing":
+                res = await ai.generate_briefing(self.hass, cfg, self.entry.title)
+            elif tache == "musique":
+                options = [self._media_id(cfg.get(cle)) for cle in
+                           (CONF_PLAYLIST, CONF_PLAYLIST_DOUCE, CONF_PLAYLIST_ENERGIQUE)]
+                options = [o for o in dict.fromkeys(options) if o]
+                if len(options) < 2:
+                    return ("Au moins deux playlists sont nécessaires pour que "
+                            "l'IA ait un choix à faire. Renseignez « Playlist "
+                            "douce » ou « Playlist énergique » dans la section Musique.")
+                res = await ai.choose_adaptive_music(self.hass, cfg, options)
+            elif tache == "suggestion":
+                res = await ai.suggest_wake_time(self.hass, cfg, cfg.get(CONF_HEURE, "07:00"))
+            elif tache == "bilan":
+                res = await ai.generate_weekly_report(
+                    self.hass, cfg, self.snooze_count, "test manuel"
+                )
+            elif tache == "lever":
+                res = await ai.verify_person_in_bed(self.hass, cfg)
+                if res is None:
+                    return ("Aucun capteur de présence au lit exploitable. "
+                            "Renseignez-en un dans la section Intelligence.")
+                res = "Une personne est au lit" if res else "Personne au lit"
+            elif tache == "personnalisees":
+                messages = []
+                for declencheur in ("on_wake", "on_stop", "on_evening"):
+                    messages += [
+                        f"[{declencheur}] {m}"
+                        for m in await ai.run_custom_ai_task(self.hass, cfg, declencheur)
+                    ]
+                res = "\n".join(messages) if messages else None
+            else:
+                return f"Tâche inconnue : {tache}"
+        except Exception as exc:
+            return f"Échec : {type(exc).__name__} — {exc}"
+
+        if res is None:
+            return ("Aucun résultat. Vérifiez qu'une entité AI Task est "
+                    "sélectionnée dans la section AI Task, et consultez les journaux.")
+        return str(res)
 
     async def declencher_manuel(self) -> None:
         """Déclenche manuellement le cycle de réveil."""

@@ -2,31 +2,108 @@
   "declencher": {
     "name": "Déclencher manuellement",
     "description": "Lance manuellement le cycle de réveil.",
-    "target": {"entity": {"integration": "smartwake", "domain": "switch"}}
+    "target": {
+      "entity": {
+        "integration": "smartwake",
+        "domain": "switch"
+      }
+    }
   },
   "snooze": {
     "name": "Snooze",
     "description": "Active le snooze pendant le cycle en cours.",
-    "target": {"entity": {"integration": "smartwake", "domain": "switch"}}
+    "target": {
+      "entity": {
+        "integration": "smartwake",
+        "domain": "switch"
+      }
+    }
   },
   "stop": {
     "name": "Stop",
     "description": "Arrête immédiatement le cycle de réveil.",
-    "target": {"entity": {"integration": "smartwake", "domain": "switch"}}
+    "target": {
+      "entity": {
+        "integration": "smartwake",
+        "domain": "switch"
+      }
+    }
   },
   "sauter_prochain": {
     "name": "Sauter le prochain",
     "description": "Saute le prochain réveil sans toucher à la planification.",
-    "target": {"entity": {"integration": "smartwake", "domain": "switch"}}
+    "target": {
+      "entity": {
+        "integration": "smartwake",
+        "domain": "switch"
+      }
+    }
   },
   "reset": {
     "name": "Reset",
     "description": "Remet à zéro l'état du réveil.",
-    "target": {"entity": {"integration": "smartwake", "domain": "switch"}}
+    "target": {
+      "entity": {
+        "integration": "smartwake",
+        "domain": "switch"
+      }
+    }
   },
   "bilan_hebdo": {
     "name": "Bilan hebdo IA",
     "description": "Génère et envoie un bilan de sommeil hebdomadaire via AI Task.",
-    "target": {"entity": {"integration": "smartwake", "domain": "switch"}}
+    "target": {
+      "entity": {
+        "integration": "smartwake",
+        "domain": "switch"
+      }
+    }
+  },
+  "tester_ia": {
+    "name": "Tester une tâche IA",
+    "description": "Exécute une tâche IA immédiatement et renvoie son résultat, sans attendre son créneau habituel.",
+    "target": {
+      "entity": {
+        "integration": "smartwake",
+        "domain": "switch"
+      }
+    },
+    "fields": {
+      "tache": {
+        "name": "Tâche",
+        "description": "Tâche IA à exécuter.",
+        "required": true,
+        "selector": {
+          "select": {
+            "options": [
+              {
+                "value": "briefing",
+                "label": "Briefing matinal"
+              },
+              {
+                "value": "musique",
+                "label": "Choix de musique adaptative"
+              },
+              {
+                "value": "suggestion",
+                "label": "Suggestion d'heure du soir"
+              },
+              {
+                "value": "bilan",
+                "label": "Bilan de sommeil hebdomadaire"
+              },
+              {
+                "value": "lever",
+                "label": "Vérification du lever"
+              },
+              {
+                "value": "personnalisees",
+                "label": "Tâches personnalisées"
+              }
+            ]
+          }
+        }
+      }
+    }
   }
 }

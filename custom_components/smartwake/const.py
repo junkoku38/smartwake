@@ -160,6 +160,11 @@ CONF_AI_BILAN_HEURE_PLANIF = "ai_bilan_heure_planif"
 DEFAULT_AI_SUGGESTION_HEURE = "21:30"
 DEFAULT_AI_BILAN_HEURE = "20:00"
 DEFAULT_AI_BILAN_JOUR = "dimanche"
+# Reprise d'un réveil manqué au redémarrage de Home Assistant. Si HA redémarre
+# juste avant l'heure du réveil, l'occurrence était perdue. On la rattrape si
+# le retard n'excède pas cette tolérance.
+CONF_RATTRAPAGE_MIN = "rattrapage_min"
+DEFAULT_RATTRAPAGE_MIN = 15
 
 # Mode de travail. Deux façons de le renseigner : une valeur fixe, ou une entité
 # (input_select, capteur, calendrier) pour un mode qui change d'un jour à l'autre.
@@ -263,6 +268,7 @@ SERVICE_STOP = "stop"
 SERVICE_SKIP = "sauter_prochain"
 SERVICE_RESET = "reset"
 SERVICE_BILAN_HEBDO = "bilan_hebdo"
+SERVICE_TESTER_IA = "tester_ia"
 
 # ── Modes de travail ────────────────────────────────────────────
 

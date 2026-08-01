@@ -2773,3 +2773,112 @@ async def test_diagnostics_sans_coordinator(coordinator):
     )
     assert diag["coordinator"] == "non chargé"
     assert "config" in diag
+
+
+# ── Rattrapage d'un réveil manqué au redémarrage ───────────────
+
+@pytest.mark.asyncio
+async def test_rattrapage_reveil_manque(coordinator):
+    """Régression : un redémarrage juste avant le réveil faisait rater
+    l'occurrence, considérée comme passée. On la rattrape si le retard reste
+    dans la tolérance."""
+    from datetime import datetime, timedelta
+
+    from homeassistant.util import dt as dt_util
+
+    now = dt_util.now()
+
+    async def rattrape(delta_min, tolerance):
+        heure = (now + timedelta(minutes=delta_min)).strftime("%H:%M")
+        coordinator.entry.data = {
+            **coordinator.entry.data, "heure": heure, "jours": "tous",
+            "rattrapage_min": tolerance,
+        }
+        coordinator._actif = True
+        coordinator._reveil_en_cours = False
+        lance = []
+        with patch.object(coordinator.hass, "async_create_task",
+                          side_effect=lambda c: (lance.append(1), c.close())):
+            coordinator._rattraper_reveil_manque()
+        return bool(lance)
+
+    assert await rattrape(-5, 15) is True, "retard de 5 min, tolérance 15"
+    assert await rattrape(-20, 15) is False, "retard hors tolérance"
+    assert await rattrape(5, 15) is False, "heure future"
+    assert await rattrape(-5, 0) is False, "tolérance nulle = désactivé"
+
+    # Le rattrapage doit être appelé au démarrage de Home Assistant
+    src = open("custom_components/smartwake/coordinator.py", encoding="utf-8").read()
+    demarrage = src[src.index("async def async_config_entry_first_refresh"):
+                    src.index("def _rattraper_reveil_manque")]
+    assert "_rattraper_reveil_manque()" in demarrage, (
+        "le rattrapage n'est pas déclenché au démarrage"
+    )
+
+
+# ── Mode de travail exposé en entité ───────────────────────────
+
+@pytest.mark.asyncio
+async def test_mode_travail_en_entite(coordinator):
+    """Le mode de travail n'était modifiable que dans les options. L'entité
+    select permet de le piloter depuis un tableau de bord."""
+    _stub_number_module()
+    from custom_components.smartwake.select import (
+        MODE_TRAVAIL_DESC, ReveilModeTravailSelect,
+    )
+
+    ent = ReveilModeTravailSelect(coordinator, coordinator.entry, MODE_TRAVAIL_DESC)
+    assert ent.current_option == "indetermine"
+    assert set(ent._attr_options) == {"indetermine", "presentiel", "teletravail"}
+
+    await ent.async_select_option("teletravail")
+    assert coordinator.config["mode_travail"] == "teletravail"
+
+    # une valeur hors liste est ignorée
+    await ent.async_select_option("nawak")
+    assert coordinator.config["mode_travail"] == "teletravail"
+
+
+# ── Service de test IA ─────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_service_tester_ia(coordinator):
+    """La logique de test doit être partagée entre les options et le service,
+    et renvoyer un résultat exploitable."""
+    from custom_components.smartwake import ai
+
+    coordinator.entry.data = {
+        **coordinator.entry.data, "ai_task_entity": "ai_task.ollama",
+    }
+    with patch.object(ai, "generate_briefing",
+                      AsyncMock(return_value="Bonjour, il fait beau.")):
+        res = await coordinator.tester_ia("briefing")
+    assert res == "Bonjour, il fait beau."
+
+    # l'option est forcée le temps du test
+    coordinator.entry.data = {**coordinator.entry.data, "ai_briefing": False}
+    recu = {}
+
+    async def _briefing(hass, cfg, titre):
+        recu["actif"] = cfg.get("ai_briefing")
+        return "ok"
+
+    with patch.object(ai, "generate_briefing", _briefing):
+        await coordinator.tester_ia("briefing")
+    assert recu["actif"] is True
+
+    # tâche inconnue
+    assert "inconnue" in await coordinator.tester_ia("nawak")
+
+
+def test_service_tester_ia_declare():
+    """Le service doit être enregistré et documenté."""
+    import json
+
+    from custom_components.smartwake.const import SERVICE_TESTER_IA
+
+    assert SERVICE_TESTER_IA == "tester_ia"
+    services = json.load(open("custom_components/smartwake/services.yaml",
+                              encoding="utf-8"))
+    assert "tester_ia" in services
+    assert "tache" in services["tester_ia"]["fields"]

@@ -8,7 +8,7 @@ import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import ATTR_ENTITY_ID, Platform
-from homeassistant.core import HomeAssistant, ServiceCall, callback
+from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse, callback
 from homeassistant.helpers import config_validation as cv, device_registry as dr, entity_registry as er
 
 from .const import (
@@ -20,6 +20,7 @@ from .const import (
     SERVICE_SNOOZE,
     SERVICE_STOP,
     SERVICE_BILAN_HEBDO,
+    SERVICE_TESTER_IA,
     integration_version,
     SCHEMA_VERSION,
     CONF_PRESENCE_LIT_SENSORS,
@@ -91,7 +92,29 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     hass.services.async_register(DOMAIN, SERVICE_STOP, _handle_stop, schema=SERVICE_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_SKIP, _handle_skip, schema=SERVICE_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_RESET, _handle_reset, schema=SERVICE_SCHEMA)
+    async def _handle_tester_ia(call: ServiceCall) -> dict:
+        """Exécute une tâche IA et renvoie son résultat."""
+        tache = call.data["tache"]
+        resultats = {}
+        for eid in call.data.get(ATTR_ENTITY_ID, []):
+            coord = _get_coordinator(hass, eid)
+            if coord:
+                resultats[eid] = await coord.tester_ia(tache)
+            else:
+                resultats[eid] = "Réveil introuvable"
+        return {"resultats": resultats}
+
     hass.services.async_register(DOMAIN, SERVICE_BILAN_HEBDO, _handle_bilan_hebdo, schema=SERVICE_SCHEMA)
+    hass.services.async_register(
+        DOMAIN, SERVICE_TESTER_IA, _handle_tester_ia,
+        schema=vol.Schema({
+            vol.Required(ATTR_ENTITY_ID): vol.All(cv.ensure_list, [str]),
+            vol.Required("tache"): vol.In(
+                ["briefing", "musique", "suggestion", "bilan", "lever", "personnalisees"]
+            ),
+        }),
+        supports_response=SupportsResponse.OPTIONAL,
+    )
 
     # Enregistrer l'API Assist (LLM Tool Calling) — non bloquant.
     # L'échec était journalisé en debug, ce qui a masqué pendant longtemps le
