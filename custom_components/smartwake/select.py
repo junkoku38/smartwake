@@ -8,11 +8,13 @@ from homeassistant.components.select import SelectEntity, SelectEntityDescriptio
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import EntityCategory
+from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from homeassistant.exceptions import HomeAssistantError
 
 from .const import (
+    CONF_MODE_TRAVAIL_ENTITY,
     CONF_JOURS,
     CONF_JOURS_PERSO,
     CONF_MODE_HEURE,
@@ -20,6 +22,10 @@ from .const import (
     DOMAIN,
     JOURS_OPTIONS,
     MODE_TRAVAIL_INDETERMINE,
+    MODE_TRAVAIL_PRESENTIEL,
+    MODE_TRAVAIL_TELETRAVAIL,
+    MOTS_PRESENTIEL,
+    MOTS_TELETRAVAIL,
     MODE_TRAVAIL_OPTIONS,
 )
 from .coordinator import ReveilCoordinator
@@ -89,8 +95,17 @@ class ReveilSelect(SelectEntity):
 
     async def async_added_to_hass(self) -> None:
         self.async_on_remove(self.coordinator.async_add_listener(self._handle_update))
+        # Suivre l'entité dynamique en temps réel : sans cela, l'option ne se
+        # mettait à jour qu'au prochain rafraîchissement du coordinator.
+        entite = self.coordinator.config.get(CONF_MODE_TRAVAIL_ENTITY)
+        if entite:
+            self.async_on_remove(
+                async_track_state_change_event(
+                    self.hass, [entite], self._handle_update
+                )
+            )
 
-    def _handle_update(self) -> None:
+    def _handle_update(self, *args) -> None:
         self.async_write_ha_state()
 
 
@@ -147,11 +162,42 @@ class ReveilModeTravailSelect(SelectEntity):
 
     @property
     def current_option(self) -> str | None:
+        """Mode de travail, dynamique si une entité est configurée.
+
+        Lit l'entité configurée (input_select, capteur, calendrier) pour
+        refléter son état en temps réel. Sans entité, retombe sur la valeur
+        statique de la configuration.
+        """
+        entite = self.coordinator.config.get(CONF_MODE_TRAVAIL_ENTITY)
+        if entite:
+            etat = self.hass.states.get(entite)
+            if etat is not None and etat.state not in ("unknown", "unavailable"):
+                brut = str(etat.state).lower()
+                if any(mot in brut for mot in MOTS_TELETRAVAIL):
+                    return MODE_TRAVAIL_TELETRAVAIL
+                if any(mot in brut for mot in MOTS_PRESENTIEL):
+                    return MODE_TRAVAIL_PRESENTIEL
+                # Valeur non reconnue : on ne devine pas, on reste indéterminé
+                return MODE_TRAVAIL_INDETERMINE
         return self.coordinator.config.get(CONF_MODE_TRAVAIL, MODE_TRAVAIL_INDETERMINE)
 
     async def async_select_option(self, option: str) -> None:
-        if option in MODE_TRAVAIL_OPTIONS:
-            await self.coordinator.set_config_value(CONF_MODE_TRAVAIL, option)
+        if option not in MODE_TRAVAIL_OPTIONS:
+            return
+        # Si une entité dynamique est configurée, on écrit dans celle-ci plutôt
+        # que dans la config statique.
+        entite = self.coordinator.config.get(CONF_MODE_TRAVAIL_ENTITY)
+        if entite:
+            domaine = entite.split(".")[0]
+            if domaine == "input_select":
+                await self.hass.services.async_call(
+                    "input_select", "select_option",
+                    {"entity_id": entite, "option": option},
+                    blocking=True,
+                )
+                return
+        # Sans entité dynamique, on écrit dans la config
+        await self.coordinator.set_config_value(CONF_MODE_TRAVAIL, option)
 
     async def async_added_to_hass(self) -> None:
         self.async_on_remove(self.coordinator.async_add_listener(self._handle_update))
