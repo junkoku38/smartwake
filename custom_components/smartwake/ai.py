@@ -15,6 +15,7 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
+from .presence import releve_presence_lit
 from .const import (
     CONF_AI_BRIEFING_SI_TRAVAIL,
     CONF_MODE_TRAVAIL,
@@ -514,42 +515,21 @@ donnée absente."""
 
 
 
-def diagnostic_presence_lit(hass: HomeAssistant, cfg: dict) -> str | None:
-    """Explique pourquoi la détection de présence au lit ne peut pas aboutir.
-
-    Renvoie None si tout est exploitable, sinon un message actionnable. Les
-    trois causes — aucun capteur, capteurs tous indisponibles, valeurs
-    ininterprétables — donnaient le même message «\u00a0aucun capteur
-    exploitable\u00a0», trompeur quand un capteur est bien configuré mais hors
-    ligne.
-    """
+def _capteurs_presence_lit(cfg: dict) -> list[str]:
+    """Capteurs de présence au lit, anciens champs Withings compris."""
     capteurs = list(cfg.get(CONF_PRESENCE_LIT_SENSORS) or [])
     for ancienne in (CONF_WITHINGS_BED_1, CONF_WITHINGS_BED_2):
         valeur = cfg.get(ancienne)
         if valeur and valeur not in capteurs:
             capteurs.append(valeur)
+    return capteurs
 
-    if not capteurs:
-        return ("Aucun capteur de présence au lit configuré. Renseignez-en un "
-                "dans la section Intelligence.")
 
-    indisponibles = []
-    exploitables = 0
-    for entity_id in capteurs:
-        etat = hass.states.get(entity_id)
-        if etat is None:
-            indisponibles.append(f"{entity_id} (introuvable)")
-        elif etat.state in ("unknown", "unavailable"):
-            indisponibles.append(f"{entity_id} ({etat.state})")
-        else:
-            exploitables += 1
+async def diagnostic_presence_lit(hass: HomeAssistant, cfg: dict) -> str | None:
+    """Explique pourquoi la détection ne peut pas aboutir, ou None si tout va bien."""
+    from .presence import diagnostic_capteurs
 
-    if exploitables == 0:
-        return ("Capteur(s) de présence au lit configuré(s), mais aucun n'est "
-                "exploitable actuellement : " + ", ".join(indisponibles) + ". "
-                "Un capteur Withings ne publie son état qu'après une nuit "
-                "synchronisée.")
-    return None
+    return await diagnostic_capteurs(hass, _capteurs_presence_lit(cfg))
 
 
 async def verify_person_in_bed(
@@ -569,35 +549,12 @@ async def verify_person_in_bed(
     if not cfg.get(CONF_AI_VERIF_LEVER):
         return None
 
-    capteurs = list(cfg.get(CONF_PRESENCE_LIT_SENSORS) or [])
-    for ancienne in (CONF_WITHINGS_BED_1, CONF_WITHINGS_BED_2):
-        valeur = cfg.get(ancienne)
-        if valeur and valeur not in capteurs:
-            capteurs.append(valeur)
+    capteurs = _capteurs_presence_lit(cfg)
     if not capteurs:
         return None
 
-    releves: dict[str, str] = {}
-    for entity_id in capteurs:
-        etat = hass.states.get(entity_id)
-        if etat is None or etat.state in ("unknown", "unavailable"):
-            continue
-        releves[entity_id] = etat.state
-
-    if not releves:
-        return None
-
-    def _occupe(valeur: str) -> bool | None:
-        if valeur in ("on", "home", "occupied", "detected", "true"):
-            return True
-        if valeur in ("off", "not_home", "clear", "false"):
-            return False
-        try:
-            return float(valeur) > 0
-        except (TypeError, ValueError):
-            return None
-
-    verdicts = [v for v in (_occupe(x) for x in releves.values()) if v is not None]
+    verdicts_par_capteur = await releve_presence_lit(hass, capteurs)
+    verdicts = list(verdicts_par_capteur.values())
     if not verdicts:
         return None
 
@@ -608,10 +565,11 @@ async def verify_person_in_bed(
     # Désaccord : c'est le seul cas où l'IA apporte quelque chose, en pondérant
     # la nature de chaque capteur (un radar peut voir la pièce sans le lit).
     lignes = []
-    for entity_id, valeur in releves.items():
+    for entity_id, verdict in verdicts_par_capteur.items():
         etat = hass.states.get(entity_id)
         nom = (etat.attributes.get("friendly_name") if etat else None) or entity_id
-        lignes.append(f"- {nom} ({entity_id}) : {valeur}")
+        brut = etat.state if etat else "?"
+        lignes.append(f"- {nom} ({entity_id}) : {brut} → {'au lit' if verdict else 'pas au lit'}")
 
     instructions = (
         "Des capteurs de la chambre donnent des indications contradictoires sur "

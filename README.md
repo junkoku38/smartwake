@@ -72,8 +72,12 @@ Chaque champ a une **description** expliquant ce qu'il fait et pourquoi.
 - **Lever anticipé** : mouvement cuisine avant l'heure → annule la sonnerie
 - **Présence au lit** : ne sonne pas si personne n'est couché. Désignez autant de
   capteurs que nécessaire dans *Options → Intelligence → Capteurs de présence au
-  lit* : tapis ou capteur sous matelas (Withings Sleep…), radar millimétrique,
-  capteur de pression. Les capteurs binaires comme numériques sont acceptés.
+  lit*, quelle qu'en soit la nature — tapis ou capteur sous matelas, radar
+  millimétrique, capteur de pression, `in_bed` Withings. L'intégration interprète
+  les états binaires (`on`/`off`), textuels (`home`/`occupied`…) et numériques
+  (toute valeur non nulle = présence). Un capteur momentanément indisponible —
+  un `binary_sensor.<...>_in_bed` Withings passe à `unknown` la nuit — est
+  rattrapé par son dernier état connu récent.
 - **Escalade intelligente** : 3 niveaux progressifs au lieu de tout à 100% d'un coup
 
 ### AI Task (HA ≥ 2025.8, optionnel)

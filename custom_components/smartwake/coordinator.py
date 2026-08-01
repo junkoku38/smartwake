@@ -813,21 +813,16 @@ class ReveilCoordinator(DataUpdateCoordinator):
     def _personne_au_lit(self) -> bool:
         """Vrai si au moins un capteur signale une personne couchée.
 
-        Accepte les capteurs binaires (radar millimétrique, tapis sous matelas)
-        comme les capteurs numériques, dont toute valeur non nulle est
-        interprétée comme une présence.
+        Chemin synchrone (planification) : on se contente de l'état courant,
+        binaire, numérique ou à valeur textuelle. Le rattrapage par dernier état
+        connu, asynchrone, est réservé à la vérification du lever.
         """
+        from .presence import interpreter_etat
+
         for entity in self._capteurs_lit():
             state = self.hass.states.get(entity)
-            if state is None or state.state in ("unknown", "unavailable"):
-                continue
-            if state.state in ("on", "home", "occupied", "detected", "true"):
+            if state is not None and interpreter_etat(state.state) is True:
                 return True
-            try:
-                if float(state.state) > 0:
-                    return True
-            except (TypeError, ValueError):
-                continue
         return False
 
     # ── Planification ─────────────────────────────────────────
@@ -2087,7 +2082,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
                     self.hass, cfg, self.snooze_count, "test manuel"
                 )
             elif tache == "lever":
-                probleme = ai.diagnostic_presence_lit(self.hass, cfg)
+                probleme = await ai.diagnostic_presence_lit(self.hass, cfg)
                 if probleme:
                     return probleme
                 res = await ai.verify_person_in_bed(self.hass, cfg)

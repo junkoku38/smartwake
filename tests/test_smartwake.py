@@ -2908,35 +2908,30 @@ def _hass_etats(mapping):
     return h
 
 
-def test_diagnostic_presence_lit_distingue_les_causes():
+@pytest.mark.asyncio
+async def test_diagnostic_presence_lit_distingue_les_causes():
     """Régression : « Aucun capteur de présence au lit exploitable » était
     affiché aussi bien pour une absence de capteur que pour des capteurs
     configurés mais hors ligne — trompeur quand le capteur existe mais que
     Withings ne l'a pas encore synchronisé."""
-    from custom_components.smartwake.ai import diagnostic_presence_lit
+    from custom_components.smartwake.presence import diagnostic_capteurs
 
     # Aucun capteur : le message invite à en configurer un
-    msg = diagnostic_presence_lit(_hass_etats({}), {})
+    msg = await diagnostic_capteurs(_hass_etats({}), [])
     assert "Aucun capteur" in msg and "configuré" in msg
 
     # Capteurs configurés mais tous indisponibles : cause distincte
-    msg = diagnostic_presence_lit(
+    msg = await diagnostic_capteurs(
         _hass_etats({"binary_sensor.w1": "unavailable"}),
-        {"presence_lit_sensors": ["binary_sensor.w1"]},
+        ["binary_sensor.w1"],
     )
     assert "configuré" in msg and "exploitable" in msg
     assert "binary_sensor.w1" in msg  # l'entité fautive est nommée
 
     # Au moins un capteur exploitable : aucun problème
-    assert diagnostic_presence_lit(
+    assert await diagnostic_capteurs(
         _hass_etats({"binary_sensor.matelas": "off"}),
-        {"presence_lit_sensors": ["binary_sensor.matelas"]},
-    ) is None
-
-    # Compatibilité avec les anciennes clés Withings
-    assert diagnostic_presence_lit(
-        _hass_etats({"binary_sensor.w": "on"}),
-        {"withings_bed_1": "binary_sensor.w"},
+        ["binary_sensor.matelas"],
     ) is None
 
 
@@ -2954,3 +2949,108 @@ async def test_test_lever_signale_capteur_hors_ligne(coordinator):
     res = await coordinator.tester_ia("lever")
     assert "exploitable" in res
     assert "withings_in_bed" in res
+
+
+# ── Interprétation des capteurs de présence au lit ─────────────
+
+def test_interpreter_etat_par_type_de_capteur():
+    """L'utilisateur choisit n'importe quel capteur ; l'intégration doit
+    comprendre le binaire, le numérique et les valeurs textuelles."""
+    from custom_components.smartwake.presence import interpreter_etat
+
+    for present in ("on", "home", "occupied", "detected", "true", "present"):
+        assert interpreter_etat(present) is True, present
+    for absent in ("off", "not_home", "clear", "false", "away"):
+        assert interpreter_etat(absent) is False, absent
+    # capteur numérique : pression, poids, distance
+    assert interpreter_etat("62.5") is True
+    assert interpreter_etat("0") is False
+    # indéterminé
+    for indet in ("unknown", "unavailable", None, "bidon"):
+        assert interpreter_etat(indet) is None, indet
+
+    # insensible à la casse et aux espaces
+    assert interpreter_etat(" ON ") is True
+
+
+@pytest.mark.asyncio
+async def test_repli_sur_dernier_etat_connu(coordinator):
+    """Régression : un capteur Withings passe à « unknown » la nuit et n'est
+    republié qu'au matin. L'écarter faisait échouer la vérification du lever
+    alors qu'on sait, par son dernier état connu, que la personne est couchée.
+    """
+    import sys
+    from unittest.mock import MagicMock
+
+    from custom_components.smartwake import presence
+
+    class _Etat:
+        def __init__(self, state):
+            self.state = state
+
+    hass = MagicMock()
+    hass.states.get = lambda e: _Etat("unknown")
+
+    class _Inst:
+        async def async_add_executor_job(self, fn):
+            return fn()
+
+    faux_recorder = MagicMock()
+    faux_recorder.get_instance = lambda h: _Inst()
+    faux_recorder.history.state_changes_during_period = (
+        lambda *a, **k: {"binary_sensor.withings": [_Etat("off"), _Etat("on")]}
+    )
+
+    with patch.dict(sys.modules,
+                    {"homeassistant.components.recorder": faux_recorder}):
+        verdicts = await presence.releve_presence_lit(
+            hass, ["binary_sensor.withings"]
+        )
+
+    assert verdicts == {"binary_sensor.withings": True}, (
+        "un capteur unknown doit être rattrapé par son dernier état connu"
+    )
+
+
+@pytest.mark.asyncio
+async def test_capteur_sans_historique_reste_indetermine(coordinator):
+    """Sans dernier état exploitable, le capteur est écarté proprement."""
+    import sys
+    from unittest.mock import MagicMock
+
+    from custom_components.smartwake import presence
+
+    class _Etat:
+        def __init__(self, state):
+            self.state = state
+
+    hass = MagicMock()
+    hass.states.get = lambda e: _Etat("unavailable")
+
+    class _Inst:
+        async def async_add_executor_job(self, fn):
+            return fn()
+
+    faux = MagicMock()
+    faux.get_instance = lambda h: _Inst()
+    faux.history.state_changes_during_period = lambda *a, **k: {}
+
+    with patch.dict(sys.modules, {"homeassistant.components.recorder": faux}):
+        verdicts = await presence.releve_presence_lit(hass, ["binary_sensor.hs"])
+
+    assert verdicts == {}
+
+
+@pytest.mark.asyncio
+async def test_personne_au_lit_interprete_tout_type(coordinator):
+    """Le chemin synchrone de planification accepte les mêmes sémantiques."""
+    coordinator.entry.data = {
+        **coordinator.entry.data,
+        "presence_lit_sensors": ["binary_sensor.radar", "sensor.pression"],
+    }
+    coordinator.hass.states.set("binary_sensor.radar", "off")
+    coordinator.hass.states.set("sensor.pression", "0")
+    assert coordinator._personne_au_lit() is False
+
+    coordinator.hass.states.set("sensor.pression", "48")  # kg sur le matelas
+    assert coordinator._personne_au_lit() is True
