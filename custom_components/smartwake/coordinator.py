@@ -1954,10 +1954,22 @@ class ReveilCoordinator(DataUpdateCoordinator):
         """Relance la sonnerie à l'issue du snooze."""
         cfg = self.entry.data
         duree = cfg.get(CONF_SNOOZE_DUREE, DEFAULT_SNOOZE_DUREE)
-        await asyncio.sleep(duree * 60)
+        try:
+            await asyncio.sleep(int(duree) * 60)
+        except asyncio.CancelledError:
+            _LOGGER.warning(
+                "Reprise de snooze annulée pour '%s' (statut=%s, en_cours=%s)",
+                self.entry.title, self._statut, self._reveil_en_cours,
+            )
+            raise
 
         # Un stop ou un nouveau cycle peut être survenu entre-temps
         if not self._reveil_en_cours or self._statut != STATUT_SNOOZED:
+            _LOGGER.warning(
+                "Reprise de snooze: conditions non remplies pour '%s' "
+                "(en_cours=%s, statut=%s)",
+                self.entry.title, self._reveil_en_cours, self._statut,
+            )
             return
         self._statut = STATUT_RINGING
         self._snooze_fin = None
