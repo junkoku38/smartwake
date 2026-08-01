@@ -59,6 +59,23 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
+
+def _extraire_donnee_ia(resultat: dict | None) -> str | None:
+    """Extrait le texte d'une réponse ai_task.generate_data.
+
+    Home Assistant renvoie {"response": {"data": "..."}} ou {"data": "..."}
+    selon le chemin d'appel. Les deux sont gérés.
+    """
+    if not isinstance(resultat, dict):
+        return None
+    if "data" in resultat:
+        return resultat["data"]
+    resp = resultat.get("response")
+    if isinstance(resp, dict) and "data" in resp:
+        return resp["data"]
+    return None
+
+
 def _extraire_json(texte: str) -> dict[str, Any] | None:
     """Extrait un objet JSON d'une réponse textuelle.
 
@@ -171,7 +188,7 @@ async def _call_ai_task(
         return None
 
     _LOGGER.info("AI Task '%s' réussi (repli sans structure)", task_name)
-    return {"data": valeur}
+    return {"data": valeur}  # format attendu par _extraire_donnee_ia
 
 
 def contexte_travail(hass: HomeAssistant, cfg: dict) -> dict[str, Any]:
@@ -295,9 +312,7 @@ async def generate_briefing(
     )
 
     result = await _call_ai_task(hass, "Briefing matinal", instructions, cfg=cfg)
-    if result and "data" in result:
-        return result["data"]
-    return None
+    return _extraire_donnee_ia(result)
 
 
 async def choose_adaptive_music(
@@ -340,8 +355,9 @@ async def choose_adaptive_music(
     }
 
     result = await _call_ai_task(hass, "Choix musique réveil", instructions, structure, cfg=cfg)
-    if result and "data" in result and "source" in result["data"]:
-        return result["data"]["source"]
+    donnee = _extraire_donnee_ia(result)
+    if isinstance(donnee, dict) and "source" in donnee:
+        return donnee["source"]
     return None
 
 
@@ -509,9 +525,7 @@ Appuie-toi sur les mesures fournies quand il y en a, et ne suppose aucune
 donnée absente."""
 
     result = await _call_ai_task(hass, "Bilan sommeil semaine", instructions, cfg=cfg)
-    if result and "data" in result:
-        return result["data"]
-    return None
+    return _extraire_donnee_ia(result)
 
 
 
