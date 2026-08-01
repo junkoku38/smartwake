@@ -29,7 +29,7 @@ Un réveil domotique complet qui ne se contente pas de sonner : il **prépare la
 - **🎵 Musique** — MediaSelector (playlist/radio/favoris), volume progressif
 - **💡 Lumière** — aube progressive, luminosité, durée
 - **🏠 Confort** — chauffage, cafetière, volets (position %), scène matin
-- **🧠 Intelligence** — présence, jours fériés, capteurs de lit, mouvement, escalade
+- **🧠 Intelligence** — présence, jours fériés, capteurs de lit, mode de travail, agenda adaptatif, mouvement, escalade
 - **📱 Notification** — notify (EntitySelector), TTS (message séparé), snooze
 - **🤖 AI Task** — briefing, musique adaptative, suggestion, **tasks personnalisées**
 

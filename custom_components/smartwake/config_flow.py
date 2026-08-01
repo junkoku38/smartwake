@@ -23,6 +23,10 @@ from .const import (
     CONF_AI_BILAN_JOUR,
     CONF_AI_BILAN_HEURE_PLANIF,
     CONF_AI_BRIEFING_SI_TRAVAIL,
+    CONF_ADAPTATIF_AGENDA,
+    CONF_AGENDA_ENTITY,
+    CONF_AGENDA_MARGE_MIN,
+    DEFAULT_AGENDA_MARGE_MIN,
     CONF_MODE_TRAVAIL,
     CONF_MODE_TRAVAIL_ENTITY,
     CONF_MUSIQUE_STYLE_SOLEIL,
@@ -114,9 +118,6 @@ from .const import (
     CONF_PRESENCE_LIT_SENSORS,
     CONF_WEATHER_ENTITY,
     CONF_WORKDAY_SENSOR,
-    CONF_BRIEFING_MULTI_CAPTEURS,
-    CONF_CAPTEUR_QUALITE_AIR,
-    CONF_CAPTEUR_CO2,
     DEFAULT_AUBE_MIN,
     DEFAULT_BRIGHTNESS_MAX,
     DEFAULT_CAFETIERE_MIN,
@@ -705,6 +706,9 @@ class SmartWAKEOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional(CONF_MODE_TRAVAIL_ENTITY): _entity_multi_domaines(
                     ["input_select", "sensor", "binary_sensor", "calendar"]
                 ),
+                vol.Optional(CONF_ADAPTATIF_AGENDA, default=data.get(CONF_ADAPTATIF_AGENDA, False)): bool,
+                vol.Optional(CONF_AGENDA_ENTITY): _entity("calendar"),
+                vol.Optional(CONF_AGENDA_MARGE_MIN, default=data.get(CONF_AGENDA_MARGE_MIN, DEFAULT_AGENDA_MARGE_MIN)): _num(15, 240, 5, "min"),
                 vol.Optional(CONF_PRESENCE_LIT_SENSORS, default=data.get(CONF_PRESENCE_LIT_SENSORS, [])): selector.EntitySelector(
                     selector.EntitySelectorConfig(
                         domain=["binary_sensor", "sensor", "input_boolean"], multiple=True

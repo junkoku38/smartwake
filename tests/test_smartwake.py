@@ -2680,3 +2680,96 @@ def test_champs_lumiere_presents_dans_le_formulaire():
         assert f"vol.Optional({cle})" in src or f"vol.Required({cle}," in src, (
             f"{cle} n'a pas de champ dans le formulaire"
         )
+
+
+# ── Agenda adaptatif configurable ──────────────────────────────
+
+def test_agenda_adaptatif_a_un_champ():
+    """Régression : la logique existait (_instant_adaptatif_agenda) et le
+    coordinator lisait adaptatif_agenda, agenda_entity et agenda_marge_min,
+    mais aucun champ n'existait dans le formulaire. La fonctionnalité était
+    donc inatteignable — même situation que la couleur ou les scènes."""
+    src = open("custom_components/smartwake/config_flow.py", encoding="utf-8").read()
+    for cle in ("CONF_ADAPTATIF_AGENDA", "CONF_AGENDA_ENTITY",
+                "CONF_AGENDA_MARGE_MIN"):
+        assert (f"vol.Optional({cle}" in src or f"vol.Required({cle}" in src), (
+            f"{cle} n'a pas de champ dans le formulaire"
+        )
+
+
+def test_aucune_constante_fantome():
+    """Une constante définie mais jamais ni lue par le métier ni proposée en
+    champ laisse croire qu'elle fait quelque chose."""
+    import ast
+
+    const_src = open("custom_components/smartwake/const.py", encoding="utf-8").read()
+    definies = {
+        n.id for node in ast.walk(ast.parse(const_src))
+        if isinstance(node, ast.Assign)
+        for n in node.targets
+        if isinstance(n, ast.Name) and n.id.startswith("CONF_")
+    }
+
+    utilisees = set()
+    for fichier in ("coordinator", "ai", "assist", "config_flow",
+                    "number", "select", "switch", "sensor", "binary_sensor",
+                    "time", "button", "__init__", "diagnostics"):
+        src = open(f"custom_components/smartwake/{fichier}.py", encoding="utf-8").read()
+        for node in ast.walk(ast.parse(src)):
+            if isinstance(node, ast.Name) and node.id.startswith("CONF_"):
+                utilisees.add(node.id)
+
+    # Clés conservées uniquement pour migrer d'anciennes configurations
+    migration = {"CONF_WITHINGS_BED_1", "CONF_WITHINGS_BED_2", "CONF_AI_CAMERA_VERIF"}
+    fantomes = sorted(definies - utilisees - migration)
+    assert not fantomes, f"constantes jamais utilisées : {fantomes}"
+
+
+# ── Diagnostics ────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_diagnostics_expurgent_les_donnees_personnelles(coordinator):
+    import json
+
+    from custom_components.smartwake.const import DOMAIN
+    from custom_components.smartwake.diagnostics import (
+        async_get_config_entry_diagnostics,
+    )
+
+    coordinator.entry.data = {
+        **coordinator.entry.data,
+        "nom": "Réveil de Paul",
+        "notify_device": "notify.sm_g991u1",
+        "presence": "person.paul",
+        "tts_message": "Debout Paul",
+    }
+    coordinator.hass.data = {DOMAIN: {coordinator.entry.entry_id: coordinator}}
+    await coordinator.set_actif(True)
+
+    diag = await async_get_config_entry_diagnostics(
+        coordinator.hass, coordinator.entry
+    )
+    brut = json.dumps(diag, ensure_ascii=False)
+
+    for secret in ("Paul", "sm_g991u1", "Debout"):
+        assert secret not in brut, f"fuite de « {secret} » dans les diagnostics"
+
+    # mais l'état d'exécution utile est bien présent
+    assert diag["coordinator"]["actif"] is True
+    assert "prochain_reveil" in diag["coordinator"]
+    assert "trigger_arme" in diag["coordinator"]
+
+
+@pytest.mark.asyncio
+async def test_diagnostics_sans_coordinator(coordinator):
+    from custom_components.smartwake.const import DOMAIN
+    from custom_components.smartwake.diagnostics import (
+        async_get_config_entry_diagnostics,
+    )
+
+    coordinator.hass.data = {DOMAIN: {}}
+    diag = await async_get_config_entry_diagnostics(
+        coordinator.hass, coordinator.entry
+    )
+    assert diag["coordinator"] == "non chargé"
+    assert "config" in diag

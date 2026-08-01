@@ -177,7 +177,10 @@
           "escalade_intelligente": "Escalade progressive (3 niveaux)",
           "presence_lit_sensors": "Capteurs de présence au lit",
           "mode_travail": "Mode de travail habituel",
-          "mode_travail_entity": "Entité indiquant le mode de travail"
+          "mode_travail_entity": "Entité indiquant le mode de travail",
+          "adaptatif_agenda": "Avancer selon l'agenda",
+          "agenda_entity": "Calendrier",
+          "agenda_marge_min": "Marge avant le rendez-vous (min)"
         },
         "data_description": {
           "presence": "Le réveil NE sonnera PAS si cette personne n'est pas à la maison. Laisse vide pour toujours sonner.",
@@ -192,7 +195,10 @@
           "escalade_intelligente": "Si activé, l'escalade est progressive : 5 min (volume 60%), 10 min (80%), 15 min (100%). Au lieu de tout à 100% d'un coup.",
           "presence_lit_sensors": "Capteurs indiquant qu'une personne est couchée : tapis ou capteur sous matelas (Withings Sleep…), radar millimétrique, capteur de pression. Le réveil ne sonne pas si personne n'est au lit, et sert aussi à vérifier le lever.",
           "mode_travail": "Sert aux tâches IA : en télétravail, le trajet et la météo n'influencent ni le briefing ni l'heure suggérée.",
-          "mode_travail_entity": "Pour un rythme alterné. Une entité renseignée prime sur le mode fixe ci-dessus. Tout état contenant « télétravail », « remote » ou « maison » est compris comme du télétravail ; « présentiel », « bureau » ou « site » comme du présentiel."
+          "mode_travail_entity": "Pour un rythme alterné. Une entité renseignée prime sur le mode fixe ci-dessus. Tout état contenant « télétravail », « remote » ou « maison » est compris comme du télétravail ; « présentiel », « bureau » ou « site » comme du présentiel.",
+          "adaptatif_agenda": "Avance le réveil pour arriver à l'heure à votre premier rendez-vous du jour.",
+          "agenda_entity": "Calendrier dont le premier événement de la journée sert de référence.",
+          "agenda_marge_min": "Temps à réserver avant le rendez-vous : préparation et trajet. Le réveil est calé sur début du rendez-vous moins cette marge, sans jamais dépasser l'heure habituelle."
         }
       },
       "notification": {

@@ -33,6 +33,9 @@ class ConfigEntry:
         self.entry_id = entry_id
         self.title = title
         self.data = data or {}
+        self.version = 6
+        self.minor_version = 0
+        self.source = "user"
 
     def async_on_unload(self, fn):
         pass

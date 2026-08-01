@@ -48,7 +48,6 @@ def slugify(title: str) -> str:
 
 # ── Clés config flow ──────────────────────────────────────────
 CONF_HEURE = "heure"
-CONF_HEURE_PAR_JOUR = "heure_par_jour"
 CONF_HEURE_LUNDI = "heure_lundi"
 CONF_HEURE_MARDI = "heure_mardi"
 CONF_HEURE_MERCREDI = "heure_mercredi"
@@ -82,7 +81,6 @@ CONF_AUBE_MIN = "aube_min"
 CONF_VOLETS = "volets"
 CONF_VOLETS_SOLEIL = "volets_soleil"
 CONF_VOLETS_POSITION = "volets_position"
-CONF_VOLETS_SOLEIL_LEVER = "volets_soleil_lever"
 # Couleur de la lumière de réveil. La température de couleur était déjà lue par
 # la rampe, mais aucun champ ne permettait de la renseigner.
 CONF_LUMIERE_COULEUR = "lumiere_couleur"
@@ -141,9 +139,6 @@ CONF_DUREE_PROGRESSIVE = "duree_progressive"
 CONF_SCENES_MATIN = "scenes_matin"
 CONF_SCENE_MATIN_ENTITIES = "scene_matin_entities"
 CONF_ESCALADE_INTELLIGENTE = "escalade_intelligente"
-CONF_BRIEFING_MULTI_CAPTEURS = "briefing_multi_capteurs"
-CONF_CAPTEUR_QUALITE_AIR = "capteur_qualite_air"
-CONF_CAPTEUR_CO2 = "capteur_co2"
 
 # ── AI Task ───────────────────────────────────────────────────
 CONF_AI_BRIEFING = "ai_briefing"
@@ -186,7 +181,6 @@ CONF_AI_CUSTOM_ENABLED = "ai_custom_enabled"
 CONF_AI_CUSTOM_PROMPT = "ai_custom_prompt"
 CONF_AI_CUSTOM_TRIGGER = "ai_custom_trigger"
 CONF_AI_CUSTOM_ENTITIES = "ai_custom_entities"
-CONF_AI_CUSTOM_NOTIFY = "ai_custom_notify"
 CONF_AI_CUSTOM_TASKS = "ai_custom_tasks"
 CONF_WEATHER_ENTITY = "weather_entity"
 CONF_TRAJET_SENSOR = "trajet_sensor"
