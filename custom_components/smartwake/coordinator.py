@@ -150,14 +150,25 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
-def _jours_actifs(mode: str, jours_perso: list[str] | None = None) -> set[int]:
-    """Retourne l'ensemble des numéros de jour (0=lundi) actifs."""
+def _jours_actifs(
+    mode: str,
+    jours_perso: list[str] | None = None,
+    heures_par_jour: dict[int, str | None] | None = None,
+) -> set[int]:
+    """Retourne l'ensemble des numéros de jour (0=lundi) actifs.
+
+    En mode « par_jour », un jour est actif si une heure est configurée pour ce
+    jour. Sans cela, le réveil ne sonnait jamais en mode « par_jour » : la
+    fonction retournait un ensemble vide car ce mode n'était pas reconnu.
+    """
     if mode == "tous":
         return set(range(7))
     if mode == "semaine":
         return {0, 1, 2, 3, 4}
     if mode == "weekend":
         return {5, 6}
+    if mode == "par_jour" and heures_par_jour is not None:
+        return {j for j, h in heures_par_jour.items() if h}
     if mode == "personnalise":
         if jours_perso:
             return {JOURS_NUM[j] for j in jours_perso if j in JOURS_NUM}
@@ -836,7 +847,8 @@ class ReveilCoordinator(DataUpdateCoordinator):
 
         mode = cfg.get(CONF_JOURS, "semaine")
         jours_perso = cfg.get(CONF_JOURS_PERSO, [])
-        jours = _jours_actifs(mode, jours_perso)
+        heures_par_jour = self._heures_par_jour() if mode == "par_jour" else None
+        jours = _jours_actifs(mode, jours_perso, heures_par_jour)
         if now.weekday() not in jours:
             return False
 
@@ -896,7 +908,8 @@ class ReveilCoordinator(DataUpdateCoordinator):
         cfg = self.entry.data
         mode_jours = cfg.get(CONF_JOURS, "semaine")
         jours_perso = cfg.get(CONF_JOURS_PERSO, [])
-        jours = _jours_actifs(mode_jours, jours_perso)
+        heures_par_jour = self._heures_par_jour() if mode_jours == "par_jour" else None
+        jours = _jours_actifs(mode_jours, jours_perso, heures_par_jour)
         now = dt_util.now()
 
         # Heure par jour ou heure unique ?
