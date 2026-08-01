@@ -925,9 +925,9 @@ class ReveilCoordinator(DataUpdateCoordinator):
 
     def _calculer_prochain(self) -> None:
         cfg = self.entry.data
-        mode_jours = cfg.get(CONF_JOURS, "semaine")
+        mode_jours = cfg.get(CONF_JOURS, "tous")
         jours_perso = cfg.get(CONF_JOURS_PERSO, [])
-        heures_par_jour = self._heures_par_jour() if mode_jours == "par_jour" else None
+        heures_par_jour = self._heures_par_jour()
         jours = _jours_actifs(mode_jours, jours_perso, heures_par_jour)
         now = dt_util.now()
 
