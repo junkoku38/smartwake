@@ -2293,3 +2293,72 @@ async def test_pas_de_repli_sans_structure_demandee(coordinator):
     coordinator.hass.services.async_call = _call
     assert await _call_ai_task(coordinator.hass, "Briefing", "x", cfg={}) is None
     assert len(appels) == 1
+
+
+# ── Compte à rebours du snooze ─────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_fin_de_snooze_exposee(coordinator):
+    """Régression : seule la durée configurée était exposée, si bien que
+    l'interface affichait « Re-sonne dans 5 min » sans jamais décompter.
+    L'instant de reprise doit être disponible pour un compte à rebours réel.
+    """
+    coordinator.entry.data = {**coordinator.entry.data, "snooze_duree": 5}
+    await coordinator.set_actif(True)
+    coordinator._reveil_en_cours = True
+    coordinator._statut = "ringing"
+
+    assert coordinator.snooze_fin is None, "rien à décompter hors snooze"
+
+    avant = datetime.now()
+    await coordinator.snooze()
+    fin = coordinator.snooze_fin
+
+    assert fin is not None
+    reste = (fin.replace(tzinfo=None) - avant).total_seconds() / 60
+    assert 4.5 < reste <= 5.5, f"fin de snooze incohérente : {reste:.1f} min"
+
+
+@pytest.mark.asyncio
+async def test_fin_de_snooze_effacee_a_la_reprise(coordinator):
+    """L'instant doit disparaître dès que la sonnerie reprend, sinon la carte
+    afficherait un décompte négatif."""
+    await coordinator.set_actif(True)
+    coordinator._reveil_en_cours = True
+    coordinator._statut = "ringing"
+    await coordinator.snooze()
+    assert coordinator.snooze_fin is not None
+
+    coordinator._statut = "ringing"
+    assert coordinator.snooze_fin is None, "exposé uniquement pendant le snooze"
+
+
+@pytest.mark.asyncio
+async def test_fin_de_snooze_effacee_au_stop(coordinator):
+    await coordinator.set_actif(True)
+    coordinator._reveil_en_cours = True
+    coordinator._statut = "ringing"
+    await coordinator.snooze()
+
+    await coordinator.stop()
+    assert coordinator._snooze_fin is None
+    assert coordinator.snooze_fin is None
+
+
+@pytest.mark.asyncio
+async def test_capteur_fin_de_snooze(coordinator):
+    """Le capteur doit exposer l'instant, avec device_class timestamp."""
+    _stub_number_module()
+    from custom_components.smartwake.sensor import (
+        SENSOR_FIN_SNOOZE, ReveilFinSnoozeSensor,
+    )
+
+    ent = ReveilFinSnoozeSensor(coordinator, coordinator.entry, SENSOR_FIN_SNOOZE)
+    assert ent._attr_device_class == "timestamp"
+    assert ent.native_value is None
+
+    await coordinator.set_actif(True)
+    coordinator._reveil_en_cours = True
+    coordinator._statut = "ringing"
+    await coordinator.snooze()
+    assert ent.native_value is not None

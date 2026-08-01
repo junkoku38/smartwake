@@ -32,6 +32,9 @@ SENSOR_STATUT = SensorEntityDescription(
 SENSOR_PROCHAIN = SensorEntityDescription(
     key="prochain", name="Prochain réveil", icon="mdi:calendar-clock",
 )
+SENSOR_FIN_SNOOZE = SensorEntityDescription(
+    key="fin_snooze", name="Fin du snooze", icon="mdi:alarm-snooze",
+)
 SENSOR_SNOOZE = SensorEntityDescription(
     key="snooze_count", name="Snooze utilisés", icon="mdi:restart",
     entity_category=EntityCategory.DIAGNOSTIC, state_class=SensorStateClass.MEASUREMENT,
@@ -71,6 +74,7 @@ async def async_setup_entry(
         ReveilStatutSensor(coordinator, entry, SENSOR_STATUT),
         ReveilProchainSensor(coordinator, entry, SENSOR_PROCHAIN),
         ReveilSnoozeSensor(coordinator, entry, SENSOR_SNOOZE),
+        ReveilFinSnoozeSensor(coordinator, entry, SENSOR_FIN_SNOOZE),
         StatsSensor(coordinator, entry, SENSOR_TOTAL_DECLENCHEMENTS),
         StatsSensor(coordinator, entry, SENSOR_TOTAL_SNOOZES),
         StatsSensor(coordinator, entry, SENSOR_TOTAL_STOPS),
@@ -110,6 +114,18 @@ class ReveilProchainSensor(_BaseSensor):
     @property
     def native_value(self) -> datetime | None:
         return self.coordinator.prochain_reveil
+
+
+class ReveilFinSnoozeSensor(_BaseSensor):
+    """Instant de reprise de la sonnerie, pour un compte à rebours réel."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._attr_device_class = "timestamp"
+
+    @property
+    def native_value(self) -> datetime | None:
+        return self.coordinator.snooze_fin
 
 
 class ReveilSnoozeSensor(_BaseSensor):

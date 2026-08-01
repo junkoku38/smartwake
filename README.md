@@ -129,6 +129,7 @@ entité. Pour un réveil nommé `reveil` :
 | `sensor.reveil_statut` | `idle` / `prewake` / `ringing` / `snoozed` / `done` / `inactif` |
 | `sensor.reveil_prochain_reveil` | Date/heure du prochain réveil (`timestamp`) |
 | `sensor.reveil_snooze_utilises` | Snoozes utilisés sur le cycle en cours |
+| `sensor.reveil_fin_du_snooze` | Instant de reprise de la sonnerie (`timestamp`) |
 | `sensor.reveil_declenchements_total` | Déclenchements cumulés (`total_increasing`) |
 | `sensor.reveil_snoozes_total` | Snoozes cumulés (`total_increasing`) |
 | `sensor.reveil_stops_total` | Stops cumulés (`total_increasing`) |

@@ -188,9 +188,14 @@ class ReveilCoordinator(DataUpdateCoordinator):
         self._cancel_mouvement: Callable | None = None
         self._cancel_rampes: list[asyncio.Task] = []
         self._cancel_snooze: asyncio.Task | None = None
+        # Instant de reprise de la sonnerie, pour un compte à rebours réel.
+        # Seule la durée configurée était exposée : l'interface affichait donc
+        # « Re-sonne dans 5 min » sans jamais décompter.
+        self._snooze_fin: datetime | None = None
         # Vrai si la rampe de lumière a déjà été jouée par le pré-réveil,
         # pour ne pas la relancer à l'heure du réveil
         self._aube_faite = False
+        self._snooze_fin = None
         self._reveil_en_cours = False
         self._snooze_count = 0
         self._skip_prochain = False
@@ -214,6 +219,11 @@ class ReveilCoordinator(DataUpdateCoordinator):
     @property
     def prochain_reveil(self) -> datetime | None:
         return self._prochain
+
+    @property
+    def snooze_fin(self) -> datetime | None:
+        """Instant auquel la sonnerie reprend, pendant un snooze."""
+        return self._snooze_fin if self._statut == STATUT_SNOOZED else None
 
     @property
     def config(self) -> dict[str, Any]:
@@ -581,6 +591,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
             self._nettoyer_triggers()
             self._reveil_en_cours = False
             self._aube_faite = False
+            self._snooze_fin = None
             self._log_event("Réveil désactivé")
             self._fire_event("smartwake_deactivated")
         self._notify()
@@ -1642,6 +1653,9 @@ class ReveilCoordinator(DataUpdateCoordinator):
 
         self._snooze_count += 1
         self._statut = STATUT_SNOOZED
+        self._snooze_fin = dt_util.now() + timedelta(
+            minutes=self.entry.data.get(CONF_SNOOZE_DUREE, DEFAULT_SNOOZE_DUREE)
+        )
         self._log_event(f"Snooze ({self._snooze_count}/{max_snooze})")
         self._fire_event("smartwake_snoozed", count=self._snooze_count, max=max_snooze)
         self._increment_stat("total_snoozes")
@@ -1680,6 +1694,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
         if not self._reveil_en_cours or self._statut != STATUT_SNOOZED:
             return
         self._statut = STATUT_RINGING
+        self._snooze_fin = None
         self._notify()
 
         if cfg.get(CONF_MUSIQUE_ACTIVEE) and cfg.get(CONF_MEDIA_PLAYER):
@@ -1760,6 +1775,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
         self._skip_prochain = False
         self._skip_date = None
         self._aube_faite = False
+        self._snooze_fin = None
         self._statut = STATUT_DONE
         # Réarme le déclencheur pour l'occurrence suivante : la planification
         # est à usage unique depuis le passage en point-dans-le-temps.
