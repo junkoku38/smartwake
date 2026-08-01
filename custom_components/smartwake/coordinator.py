@@ -1684,6 +1684,10 @@ class ReveilCoordinator(DataUpdateCoordinator):
         if not cible:
             return False
 
+        # Le message doit être une string, pas un dict
+        if not isinstance(message, str):
+            message = str(message) if message else ""
+
         service = self._service_notify(cible)
         charge: dict[str, Any] = {"title": titre, "message": message}
         if actions:
@@ -1721,10 +1725,17 @@ class ReveilCoordinator(DataUpdateCoordinator):
     async def _envoyer_notification(self) -> None:
         """Notification actionnable avec boutons Snooze / Stop."""
         cfg = self.entry.data
+        notify_device = cfg.get(CONF_NOTIFY_DEVICE)
+        if not notify_device:
+            _LOGGER.warning(
+                "Aucun destinataire de notification configuré. "
+                "Renseignez « Destinataire » dans Options → Notification."
+            )
+            return
         envoye = await self._notifier(
-            cfg.get(CONF_NOTIFY_DEVICE),
-            cfg.get(CONF_NOTIF_TITRE, DEFAULT_NOTIF_TITRE),
-            cfg.get(CONF_NOTIF_MESSAGE, DEFAULT_NOTIF_MESSAGE),
+            notify_device,
+            str(cfg.get(CONF_NOTIF_TITRE, DEFAULT_NOTIF_TITRE)),
+            str(cfg.get(CONF_NOTIF_MESSAGE, DEFAULT_NOTIF_MESSAGE)),
             actions=[
                 {"action": f"REVEIL_SNOOZE_{self.entry.entry_id}", "title": "Snooze"},
                 {"action": f"REVEIL_STOP_{self.entry.entry_id}", "title": "Stop"},
