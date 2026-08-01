@@ -927,6 +927,20 @@ class ReveilCoordinator(DataUpdateCoordinator):
                 return True
         return False
 
+    def _personne_pas_au_lit(self) -> bool:
+        """Vrai si au moins un capteur signale explicitement personne au lit.
+
+        Un capteur « unknown » (non synchronisé) ne compte pas : on ne sait
+        pas s'il y a quelqu'un. Seul un « off » explicite permet d'annuler.
+        """
+        from .presence import interpreter_etat
+
+        for entity in self._capteurs_lit():
+            state = self.hass.states.get(entity)
+            if state is not None and interpreter_etat(state.state) is False:
+                return True
+        return False
+
     # ── Planification ─────────────────────────────────────────
 
     def _calculer_prochain(self) -> None:
@@ -1157,9 +1171,16 @@ class ReveilCoordinator(DataUpdateCoordinator):
                     return
 
         # Withings : si personne au lit
-        if self._capteurs_lit() and not self._personne_au_lit():
-            self._abandonner_reveil("personne n'est au lit")
-            return
+        # Un capteur "unknown" (pas encore synchronisé) ne doit pas annuler
+        # le reveil : on ne sait pas si la personne est au lit ou non.
+        # On n'annule que si au moins un capteur dit explicitement "off"
+        # (pas au lit) et aucun ne dit "on" (au lit).
+        if self._capteurs_lit():
+            au_lit = self._personne_au_lit()
+            explicitement_pas_au_lit = self._personne_pas_au_lit()
+            if explicitement_pas_au_lit and not au_lit:
+                self._abandonner_reveil("personne n'est au lit")
+                return
 
         self._cancel_cycle = self.hass.async_create_task(self._executer_cycle())
 
