@@ -82,6 +82,8 @@ from .const import (
     CONF_NOTIFICATION_ACTIVEE,
     CONF_NOTIFY_DEVICE,
     CONF_PLAYLIST,
+    CONF_PLAYLIST_DOUCE,
+    CONF_PLAYLIST_ENERGIQUE,
     CONF_PONCTUEL,
     CONF_PRECHAUFFE_MIN,
     CONF_PRESENCE,
@@ -1163,6 +1165,13 @@ class ReveilCoordinator(DataUpdateCoordinator):
             f"Le réveil sonore a échoué ({quoi}) — vérifiez la configuration",
         )
 
+    @staticmethod
+    def _media_id(valeur: Any) -> str:
+        """Identifiant média, que le sélecteur renvoie un dict ou une chaîne."""
+        if isinstance(valeur, dict):
+            return str(valeur.get("content_id") or "").strip()
+        return str(valeur or "").strip()
+
     async def _demarrer_musique(self) -> None:
         """Démarre la musique avec volume progressif. Retry + fallback TTS si échec."""
         cfg = self.entry.data
@@ -1173,26 +1182,50 @@ class ReveilCoordinator(DataUpdateCoordinator):
         duree = cfg.get(CONF_VOLUME_DUREE, DEFAULT_VOLUME_DUREE)
 
         # MediaSelector retourne un dict {content_id, content_type} ou un string
-        content_id = ""
+        content_id = self._media_id(playlist_raw)
         content_type = "music"
         if isinstance(playlist_raw, dict):
-            content_id = playlist_raw.get("content_id", "")
-            content_type = playlist_raw.get("content_type", "music")
-        elif isinstance(playlist_raw, str):
-            content_id = playlist_raw
-        elif playlist_raw and hasattr(playlist_raw, "get"):
-            content_id = playlist_raw.get("content_id", "")
-            content_type = playlist_raw.get("content_type", "music")
+            content_type = playlist_raw.get("content_type") or "music"
 
-        # Musique adaptative IA : choisir la playlist selon le contexte
+        # Musique adaptative IA : choisir parmi les playlists réellement
+        # configurées. Les options étaient auparavant des noms inventés, que le
+        # lecteur ne sait pas jouer : le choix de l'IA cassait la lecture.
         if cfg.get(CONF_AI_MUSIQUE_ADAPT):
             from .ai import choose_adaptive_music
-            playlist_options = [content_id, "France Inter", "Radio Nova", "Jazz doux"]
-            chosen = await choose_adaptive_music(self.hass, cfg, playlist_options)
-            if chosen:
-                content_id = chosen
-                content_type = "music"
-                self._log_event("Musique adaptative IA")
+
+            options = [content_id] + [
+                self._media_id(cfg.get(cle))
+                for cle in (CONF_PLAYLIST_DOUCE, CONF_PLAYLIST_ENERGIQUE)
+            ]
+            options = [o for o in dict.fromkeys(options) if o]
+            if len(options) > 1:
+                chosen = await choose_adaptive_music(self.hass, cfg, options)
+                if chosen in options:
+                    content_id = chosen
+                    self._log_event("Musique adaptative IA")
+                elif chosen:
+                    _LOGGER.warning(
+                        "Choix IA « %s » écarté : absent des playlists configurées",
+                        chosen,
+                    )
+            else:
+                _LOGGER.debug(
+                    "Musique adaptative sans effet : une seule playlist configurée"
+                )
+
+        # Une lecture sans identifiant échoue côté lecteur — sur Sonos par un
+        # IndexError peu parlant, async_process_play_media_url indexant la
+        # chaîne vide. Autant le dire clairement et passer au repli vocal.
+        if not content_id:
+            _LOGGER.error(
+                "Réveil '%s' : aucune playlist configurée. Renseignez « Playlist » "
+                "dans Options → Musique, ou désactivez la musique.",
+                self.entry.title,
+            )
+            self._log_event("Aucune playlist configurée — repli vocal")
+            await self._tts_speak("Il est l'heure de se lever !")
+            await self._alerter_sonnerie_echouee("aucune playlist configurée")
+            return
 
         musique_ok = False
         for attempt in range(3):

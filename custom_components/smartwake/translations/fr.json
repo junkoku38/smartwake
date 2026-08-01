@@ -92,16 +92,20 @@
           "musique_style_nuageux": "Style musical — ciel couvert ou brouillard",
           "musique_style_pluie": "Style musical — pluie ou averses",
           "musique_style_neige": "Style musical — neige",
-          "musique_style_tempete": "Style musical — orage ou vent fort"
+          "musique_style_tempete": "Style musical — orage ou vent fort",
+          "playlist_douce": "Playlist douce (alternative)",
+          "playlist_energique": "Playlist énergique (alternative)"
         },
         "data_description": {
           "musique_activee": "Active la musique au moment du réveil.",
           "media_player": "Le lecteur qui jouera la musique (Sonos, Google Cast, Squeezebox...).",
-          "playlist": "Naviguez dans le Media Browser de HA pour choisir une playlist Spotify, une radio, un favoris ou un fichier local. Le sélecteur affiche le contenu disponible sur votre media player.",
+          "playlist": "Obligatoire si la musique est activée : sans elle, la lecture échoue et le réveil retombe sur l'annonce vocale.",
           "volume_initial": "Volume de départ, faible pour un réveil en douceur (ex : 0.05 = 5%).",
           "volume_final": "Volume final atteint après la montée progressive (ex : 0.35 = 35%).",
           "volume_duree": "Durée de la montée du volume, en minutes. Le volume augmente par paliers.",
-          "musique_style_soleil": "Style ou ambiance souhaitée, en toutes lettres : « énergique, pop » par exemple. Laissez vide pour laisser l'IA décider seule."
+          "musique_style_soleil": "Style ou ambiance souhaitée, en toutes lettres : « énergique, pop » par exemple. Laissez vide pour laisser l'IA décider seule.",
+          "playlist_douce": "Proposée à l'IA de musique adaptative par temps de pluie ou de neige. Laissez vide si vous n'en voulez qu'une.",
+          "playlist_energique": "Proposée à l'IA de musique adaptative par beau temps."
         }
       },
       "lumiere": {

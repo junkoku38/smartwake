@@ -218,11 +218,11 @@ cards:
   # Snooze count (visible si > 0)
   - type: conditional
     conditions:
-      - entity: sensor.reveil_snooze_count
+      - entity: sensor.reveil_snooze_utilises
         state_not: "0"
     card:
       type: custom:mushroom-template-card
-      primary: "Snooze utilisés : {{ states('sensor.reveil_snooze_count') }}"
+      primary: "Snooze utilisés : {{ states('sensor.reveil_snooze_utilises') }}"
       icon: mdi:restart
       icon_color: orange
 ```

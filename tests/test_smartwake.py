@@ -2055,3 +2055,108 @@ async def test_heure_invalide_ne_casse_pas_la_planification(coordinator):
     await coordinator.set_actif(True)
     assert coordinator.prochain_reveil is not None
     assert coordinator.prochain_reveil.hour == 7
+
+
+# ── Régression : lecture musicale sans playlist ────────────────
+
+@pytest.mark.asyncio
+async def test_musique_sans_playlist_ne_tente_pas_la_lecture(coordinator):
+    """Régression : « Tentative musique 1/3 échouée: string index out of range ».
+
+    Sans playlist configurée, l'identifiant média valait la chaîne vide et
+    play_media était appelé quand même. Côté Home Assistant,
+    async_process_play_media_url fait `media_content_id[0] != "/"`, ce qui lève
+    IndexError sur une chaîne vide : trois tentatives inutiles, puis repli
+    vocal, sans que la cause soit compréhensible.
+    """
+    coordinator.entry.data = {
+        **coordinator.entry.data,
+        "media_player": "media_player.chambre",
+        "playlist": "",
+    }
+    appels = []
+
+    async def _call(domain, service, data=None, **kw):
+        appels.append((domain, service))
+
+    coordinator.hass.services.async_call = _call
+    with patch.object(coordinator, "_tts_speak", AsyncMock()) as tts:
+        await coordinator._demarrer_musique()
+
+    assert not [a for a in appels if a == ("media_player", "play_media")], (
+        "aucune lecture ne doit être tentée sans playlist"
+    )
+    assert tts.called, "le repli vocal doit prendre le relais"
+
+
+@pytest.mark.asyncio
+async def test_musique_ia_refuse_une_option_injouable(coordinator):
+    """Régression : les options soumises à l'IA étaient des noms inventés
+    (« France Inter », « Radio Nova »), que le lecteur ne sait pas jouer. Le
+    choix de l'IA remplaçait une playlist valide par une valeur injouable.
+    """
+    from custom_components.smartwake import ai
+
+    coordinator.entry.data = {
+        **coordinator.entry.data,
+        "media_player": "media_player.chambre",
+        "playlist": "media-source://media_source/local/reveil.mp3",
+        "playlist_douce": "media-source://media_source/local/doux.mp3",
+        "ai_musique_adapt": True,
+    }
+    lectures = []
+
+    async def _call(domain, service, data=None, **kw):
+        if service == "play_media":
+            lectures.append((data or {}).get("media_content_id"))
+
+    coordinator.hass.services.async_call = _call
+
+    # L'IA renvoie une valeur hors des options : elle doit être écartée
+    with patch.object(ai, "choose_adaptive_music",
+                      AsyncMock(return_value="France Inter")):
+        await coordinator._demarrer_musique()
+    assert lectures[0] == "media-source://media_source/local/reveil.mp3"
+
+    # Une valeur figurant dans les options est acceptée
+    lectures.clear()
+    with patch.object(ai, "choose_adaptive_music",
+                      AsyncMock(return_value="media-source://media_source/local/doux.mp3")):
+        await coordinator._demarrer_musique()
+    assert lectures[0] == "media-source://media_source/local/doux.mp3"
+
+
+@pytest.mark.asyncio
+async def test_musique_ia_ignoree_sans_alternative(coordinator):
+    """Sans seconde playlist, il n'y a rien à choisir : l'appel à l'IA est
+    inutile et doit être évité."""
+    from custom_components.smartwake import ai
+
+    coordinator.entry.data = {
+        **coordinator.entry.data,
+        "media_player": "media_player.chambre",
+        "playlist": "media-source://media_source/local/reveil.mp3",
+        "ai_musique_adapt": True,
+    }
+
+    async def _call(domain, service, data=None, **kw):
+        pass
+
+    coordinator.hass.services.async_call = _call
+    choix = AsyncMock(return_value=None)
+    with patch.object(ai, "choose_adaptive_music", choix):
+        await coordinator._demarrer_musique()
+    assert not choix.called
+
+
+def test_media_id_accepte_dict_et_chaine(coordinator=None):
+    """Le sélecteur de média renvoie soit un dict, soit une chaîne."""
+    from custom_components.smartwake.coordinator import ReveilCoordinator
+
+    f = ReveilCoordinator._media_id
+    assert f({"content_id": "x", "content_type": "music"}) == "x"
+    assert f("y") == "y"
+    assert f("  z  ") == "z"
+    assert f(None) == ""
+    assert f("") == ""
+    assert f({}) == ""

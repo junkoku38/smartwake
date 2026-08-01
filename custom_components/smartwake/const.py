@@ -65,6 +65,11 @@ CONF_LUMIERE_TEMP_COULEUR = "lumiere_temp_couleur"
 CONF_MUSIQUE_ACTIVEE = "musique_activee"
 CONF_MEDIA_PLAYER = "media_player"
 CONF_PLAYLIST = "playlist"
+# Alternatives réellement jouables, parmi lesquelles l'IA peut choisir selon la
+# météo. La version précédente proposait des noms inventés (« France Inter »,
+# « Radio Nova »), qui ne sont pas des URI et faisaient échouer la lecture.
+CONF_PLAYLIST_DOUCE = "playlist_douce"
+CONF_PLAYLIST_ENERGIQUE = "playlist_energique"
 CONF_VOLUME_INITIAL = "volume_initial"
 CONF_VOLUME_FINAL = "volume_final"
 CONF_VOLUME_DUREE = "volume_duree"
