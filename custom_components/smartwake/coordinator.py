@@ -2110,6 +2110,9 @@ class ReveilCoordinator(DataUpdateCoordinator):
                     await self._notifier(
                         cfg.get("notify_device"), "⏰ Briefing SmartWAKE", res
                     )
+                    # Tester aussi le TTS si configuré
+                    if cfg.get("tts_entity"):
+                        await self._tts_speak(res)
             elif tache == "musique":
                 options = [self._media_id(cfg.get(cle)) for cle in
                            (CONF_PLAYLIST, CONF_PLAYLIST_DOUCE, CONF_PLAYLIST_ENERGIQUE)]
@@ -2121,6 +2124,11 @@ class ReveilCoordinator(DataUpdateCoordinator):
                 res = await ai.choose_adaptive_music(self.hass, cfg, options)
             elif tache == "suggestion":
                 res = await ai.suggest_wake_time(self.hass, cfg, cfg.get(CONF_HEURE, "07:00"))
+                if res:
+                    await self._notifier(
+                        cfg.get("notify_device"),
+                        "⏰ Suggestion SmartWAKE", res
+                    )
             elif tache == "bilan":
                 res = await ai.generate_weekly_report(
                     self.hass, cfg, self.snooze_count, "test manuel"
