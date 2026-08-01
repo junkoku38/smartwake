@@ -344,18 +344,37 @@ class ReveilCoordinator(DataUpdateCoordinator):
             self._log_event(f"Réveil rattrapé (+{retard:.0f} min)")
             self._cancel_cycle = self.hass.async_create_task(self._executer_cycle())
 
+    @property
+    def entity_id_prefix(self) -> str:
+        """Préfixe des entity_id des entités par jour."""
+        try:
+            from homeassistant.util import slugify
+            return slugify(self.entry.title)
+        except ImportError:
+            return self.entry.title.lower().replace(" ", "_")
+
     def _heures_par_jour(self) -> dict[int, str | None]:
-        """Heures configurées par jour de la semaine (0 = lundi)."""
-        cfg = self.entry.data
-        return {
-            0: cfg.get(CONF_HEURE_LUNDI),
-            1: cfg.get(CONF_HEURE_MARDI),
-            2: cfg.get(CONF_HEURE_MERCREDI),
-            3: cfg.get(CONF_HEURE_JEUDI),
-            4: cfg.get(CONF_HEURE_VENDREDI),
-            5: cfg.get(CONF_HEURE_SAMEDI),
-            6: cfg.get(CONF_HEURE_DIMANCHE),
-        }
+        """Heures configurées par jour de la semaine (0 = lundi).
+
+        Les heures sont stockées dans les entités time.<nom>_heure_<jour>,
+        pas dans entry.data : la config ne contient que des valeurs par défaut,
+        les vraies heures sont éditées via les entités time.*.
+        """
+        resultat: dict[int, str | None] = {}
+        for idx, jour in enumerate(
+            ("lundi", "mardi", "mercredi", "jeudi", "vendredi",
+             "samedi", "dimanche")
+        ):
+            cle_cfg = f"heure_{jour}"
+            heure = self.entry.data.get(cle_cfg)
+            if not heure:
+                # Les heures sont dans les entités time.*, pas dans entry.data
+                entity_id = f"{self.entity_id_prefix}_heure_{jour}"
+                etat = self.hass.states.get(entity_id)
+                if etat and etat.state not in ("unknown", "unavailable"):
+                    heure = etat.state
+            resultat[idx] = heure if heure else None
+        return resultat
 
     def _watchdog(self) -> None:
         """Vérifie au démarrage HA que l'alarme est cohérente + détecte les anomalies."""
