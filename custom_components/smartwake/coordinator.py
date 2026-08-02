@@ -1276,6 +1276,22 @@ class ReveilCoordinator(DataUpdateCoordinator):
                 erreurs.append("notification")
                 _LOGGER.error("Erreur notification: %s", exc)
 
+        # Notification persistante : visible sur tous les dashboards, pas
+        # seulement sur le téléphone. Elle reste affichée jusqu'à ce qu'on
+        # la ferme, contrairement à la notification Android qui disparaît.
+        try:
+            await self.hass.services.async_call(
+                "persistent_notification", "create",
+                {
+                    "title": "⏰ " + self.entry.title,
+                    "message": "Le réveil sonne ! Cliquez Stop ou Snooze depuis l'application mobile.",
+                    "notification_id": f"smartwake_{self.entry.entry_id}",
+                },
+                blocking=True,
+            )
+        except Exception as exc:
+            _LOGGER.error("Erreur notification persistante: %s", exc)
+
         # 2. Arrêt par mouvement, armé avant les rampes pour la même raison
         if cfg.get(CONF_MOUVEMENT_STOP, False) and cfg.get(CONF_MOUVEMENT_SDB):
             self._setup_mouvement_stop()
@@ -2073,6 +2089,16 @@ class ReveilCoordinator(DataUpdateCoordinator):
                 )
             except Exception as exc:
                 _LOGGER.error("Erreur extinction: %s", exc)
+
+        # Ferme la notification persistante : le réveil est arrêté.
+        try:
+            await self.hass.services.async_call(
+                "persistent_notification", "dismiss",
+                {"notification_id": f"smartwake_{self.entry.entry_id}"},
+                blocking=True,
+            )
+        except Exception as exc:
+            _LOGGER.debug("Erreur fermeture notif persistante: %s", exc)
 
         # Briefing : IA si activée, sinon TTS basique
         briefing_msg = None
