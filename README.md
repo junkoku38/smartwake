@@ -3,6 +3,8 @@
 Réveil progressif pour Home Assistant : lumière, musique, volets et chauffage,
 avec assistance IA optionnelle.
 
+![Page de l'intégration](integration.png)
+
 
 <p align="center">
   <img src="https://img.shields.io/badge/Home%20Assistant-2024.1%2B-41BDF5?logo=home-assistant&logoColor=white" />
