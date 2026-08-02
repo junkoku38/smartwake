@@ -657,7 +657,7 @@ class SmartWAKEOptionsFlow(config_entries.OptionsFlow):
         data = self._data
         schema = vol.Schema({
                 vol.Optional(CONF_PRESENCE): _entity("person"),
-                vol.Optional(CONF_WORKDAY_SENSOR): _entity("binary_sensor"),
+                vol.Optional(CONF_WORKDAY_SENSOR): _entity_multi_domaines(["binary_sensor", "input_boolean"]),
                 vol.Optional(CONF_IGNORER_FERIES, default=data.get(CONF_IGNORER_FERIES, True)): bool,
                 vol.Optional(CONF_VACANCES_SCOLAIRES_CALENDAR): _entity("calendar"),
                 vol.Optional(CONF_IGNORER_VACANCES_SCOLAIRE, default=data.get(CONF_IGNORER_VACANCES_SCOLAIRE, False)): bool,
