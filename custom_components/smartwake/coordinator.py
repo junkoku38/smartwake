@@ -1975,6 +1975,14 @@ class ReveilCoordinator(DataUpdateCoordinator):
         self._snooze_fin = None
         self._notify()
 
+        # Renvoie la notification actionnable après la reprise du snooze,
+        # pour que l'utilisateur puisse re-snoozer ou re-stopper.
+        if cfg.get(CONF_NOTIFICATION_ACTIVEE):
+            try:
+                await self._envoyer_notification()
+            except Exception as exc:
+                _LOGGER.error("Erreur notification reprise: %s", exc)
+
         if cfg.get(CONF_MUSIQUE_ACTIVEE) and cfg.get(CONF_MEDIA_PLAYER):
             # Relance la lecture, puis reprend la montée de volume là où elle
             # s'était interrompue. La rampe originale a été annulée au snooze :
