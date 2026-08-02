@@ -883,7 +883,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
         # y compris le weekend. On vérifie maintenant binary_sensor.jour_ferie
         # (interne), qui vaut « on » uniquement les jours fériés.
         if cfg.get(CONF_IGNORER_FERIES, True):
-            entite_ferie = f"binary_sensor.{self._base}_jour_ferie"
+            entite_ferie = f"binary_sensor.{self.entity_id_prefix}_jour_ferie"
             state = self.hass.states.get(entite_ferie)
             if state and state.state == "on":
                 return False
