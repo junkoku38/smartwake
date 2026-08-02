@@ -24,14 +24,16 @@ Un réveil domotique complet qui ne se contente pas de sonner : il **prépare la
 - Jours actifs
 - **Preset** : 🎵 Simple, 🌅 Confort, 🏠 Complet
 
-**Menu Configurer** (7 sections, modifiable après) :
-- **Base** — heure, heure par jour, jours, ponctuel, skip, vacances
-- **🎵 Musique** — MediaSelector (playlist/radio/favoris), volume progressif
-- **💡 Lumière** — aube progressive, luminosité, durée
+**Menu Configurer** (9 sections, modifiable après) :
+- **Base** — heure, heure par jour, jours, ponctuel, skip, vacances, rattrapage
+- **🎵 Musique** — MediaSelector (playlist/radio/favoris), volume progressif, styles par météo
+- **💡 Lumière** — aube progressive, couleur, température, forme de montée, scène
 - **🏠 Confort** — chauffage, cafetière, volets (position %), scène matin
 - **🧠 Intelligence** — présence, jours fériés, capteurs de lit, mode de travail, agenda adaptatif, mouvement, escalade
 - **📱 Notification** — notify (EntitySelector), TTS (message séparé), snooze
-- **🤖 AI Task** — briefing, musique adaptative, suggestion, **tasks personnalisées**
+- **🤖 AI Task** — briefing, musique adaptative, suggestion, bilan, **tasks personnalisées**
+- **🔒 Sécurité nocturne** — vérification des ouvertures chaque soir
+- **🧪 Tester les tâches IA** — exécuter une tâche immédiatement
 
 Chaque champ a une **description** expliquant ce qu'il fait et pourquoi.
 
@@ -41,11 +43,13 @@ Chaque champ a une **description** expliquant ce qu'il fait et pourquoi.
 - **Multi-alarmes** : plusieurs réveils indépendants (semaine, week-end, sport, enfants…)
 - **Heure unique** ou **heure par jour** : lundi 8h, mardi 9h, weekend 10h — un seul réveil suffit
 - **Jours** : tous / semaine / weekend / personnalisé (cases indépendantes)
-- **Jours fériés** : désactivation via capteur `workday` (calendrier officiel français)
+- **Jours fériés** : désactivation via capteur interne (calendrier officiel français)
 - **Vacances scolaires** : désactivation via `calendar` entity (ICS Éducation nationale)
 - **Mode vacances** : booléen OU entité (calendar, input_boolean, person) — automatique
 - **Skip une fois** : sauter le prochain réveil sans toucher à la planification
 - **Alarme ponctuelle** : réveil unique auto-désactivé après déclenchement
+- **Rattrapage au redémarrage** : si HA redémarre juste après l'heure du réveil,
+  le réveil se déclenche quand même (tolérance configurable, 15 min par défaut)
 
 ### Pré-réveil (la maison se prépare avant vous)
 - **Chauffage** : radiateur/thermostat en mode confort **X minutes avant**
@@ -58,14 +62,23 @@ Chaque champ a une **description** expliquant ce qu'il fait et pourquoi.
 - **Volets** : ouverture à position configurable (0-100%) si soleil levé
 - **Scène matin** : multi-sélection de lumières/scènes (couloir, cuisine, sdb)
 - **Notification mobile** actionnable avec boutons **Snooze** / **Stop**
+- **Notification persistante** : visible sur tous les dashboards, fermée au stop
 - **Briefing vocal (TTS)** : message personnalisable, séparé de la notification.
   Nécessite une enceinte (`media_player`) **et** un moteur de synthèse
   (`tts.*`) ; le moteur est détecté automatiquement s'il n'est pas précisé.
+- **Restauration de l'état initial** : au stop, le volume du Sonos, la
+  luminosité de la lampe et le preset du radiateur reviennent à leur valeur
+  d'avant le réveil.
 
 ### Contrôles pendant la sonnerie
-- **Snooze** : durée configurable, nombre max de répétitions
+- **Snooze** : durée configurable, nombre max de répétitions, notification
+  renvoyée à chaque reprise avec les boutons Snooze/Stop
+- **Compte à rebours du snooze** : `sensor.<nom>_fin_du_snooze` expose
+  l'instant de reprise, la carte affiche un décompte à la seconde
 - **Stop** : notification actionnable, bouton, ou détection de mouvement salle de bain
 - **Escalade** : progressive (3 niveaux : 60% → 80% → 100%) ou classique (tout à 100%)
+- **Lumière de réveil** : couleur RVB ou température de couleur, forme de la
+  montée (douce ou linéaire), scène appliquée en fin de montée
 
 ### Intelligence contextuelle
 - **Présence** : ne sonne pas si la personne n'est pas à la maison
@@ -78,29 +91,44 @@ Chaque champ a une **description** expliquant ce qu'il fait et pourquoi.
   (toute valeur non nulle = présence). Un capteur momentanément indisponible —
   un `binary_sensor.<...>_in_bed` Withings passe à `unknown` la nuit — est
   rattrapé par son dernier état connu récent.
+- **Mode de travail** : présentiel ou télétravail, en valeur fixe ou via une
+  entité (`input_select`, capteur, calendrier). En télétravail, le trajet est
+  ignoré du briefing et la météo n'influence plus l'heure suggérée. L'entité
+  `select.<nom>_mode_travail` est dynamique : elle suit l'entité configurée en
+  temps réel.
+- **Agenda adaptatif** : avance le réveil selon le premier rendez-vous du jour
 - **Escalade intelligente** : 3 niveaux progressifs au lieu de tout à 100% d'un coup
 
 ### AI Task (HA ≥ 2025.8, optionnel)
-- **Briefing matinal IA** : briefing naturel (météo, agenda, trajet, batterie)
-- **Musique adaptative** : l'IA choisit la playlist selon la météo
+- **Briefing matinal IA** : briefing naturel (météo, agenda, trajet, batterie).
+  Repli automatique en texte libre si le modèle ne gère pas les réponses
+  structurées (Ollama).
+- **Musique adaptative** : l'IA choisit la playlist selon la météo et le mode
+  de travail. Styles musicaux configurables par famille météo (soleil, couvert,
+  pluie, neige, orage).
 - **🔒 Vérification nocturne** : chaque soir à l'heure choisie, vérifie que
   portes, volets, portail et garage sont fermés. Si une ouverture reste
   ouverte, une notification est envoyée. Logique déterministe, sans IA —
   fonctionne même sans modèle configuré.
 - **Suggestion d'heure du soir** : notification Accepter/Refuser (l'IA propose,
   vous validez). Heure de l'envoi configurable.
-- **Bilan de sommeil hebdomadaire** : synthèse + recommandations (service `smartwake.bilan_hebdo`).
-  Désignez vos capteurs de sommeil dans *Options → AI Task → Capteurs de sommeil* :
-  score, durées de sommeil profond/léger/paradoxal, réveils nocturnes,
-  endormissement, ronflement. Compatible Withings, Fitbit, Oura ou tout autre
-  capteur. Les moyennes sur 7 jours sont calculées via le recorder, avec repli
-  sur la dernière nuit s'il est indisponible, et les durées en secondes sont
-  converties en heures et minutes.
+- **Bilan de sommeil hebdomadaire** : synthèse + recommandations (service
+  `smartwake.bilan_hebdo` ou planifié). Désignez vos capteurs de sommeil dans
+  *Options → AI Task → Capteurs de sommeil* : score, durées de sommeil
+  profond/léger/paradoxal, réveils nocturnes, endormissement, ronflement.
+  Compatible Withings, Fitbit, Oura ou tout autre capteur. Les moyennes sur 7
+  jours sont calculées via le recorder, avec repli sur la dernière nuit s'il
+  est indisponible, et les durées en secondes sont converties en heures et
+  minutes. Jour et heure d'envoi configurables.
 - **Vérification du lever** : 10 min après le Stop, relance si vous êtes encore
   couché, d'après les capteurs de présence au lit. Quand plusieurs capteurs se
   contredisent — un radar peut détecter quelqu'un debout dans la pièce sans qu'il
   soit au lit — l'IA arbitre ; sinon la réponse est directe, sans appel à l'IA.
-- **AI tasks personnalisées** : votre propre prompt + déclencheur + entités + notification
+- **AI tasks personnalisées** : votre propre prompt + déclencheur + entités +
+  notification. Trois déclencheurs : `on_wake`, `on_stop`, `on_evening`.
+- **Tester les tâches IA** : *Options → 🧪 Tester les tâches IA* ou service
+  `smartwake.tester_ia` pour exécuter une tâche immédiatement et voir le
+  résultat, sans attendre le créneau habituel.
 
 > Les prompts utilisés sont **visibles** dans la description de chaque champ.
 > L'IA ne déclenche **jamais** la sonnerie. Fallback automatique si indisponible.
@@ -172,6 +200,11 @@ entité. Pour un réveil nommé `reveil` :
 - **Notification actions** : capte `REVEIL_SNOOZE` / `REVEIL_STOP` / `REVEIL_ACCEPTER_HH:MM` depuis l'app mobile
 - **Retry** : musique (3 tentatives + fallback TTS), volets (2 tentatives + ouverture au lever du soleil)
 - **Apprentissage** : suit les habitudes (heure lever réelle, snooze moyen, régularité) + suggestions d'ajustement
+- **Diagnostics** : *Télécharger les diagnostics* depuis la page de l'intégration
+  fournit un instantané (configuration, état d'exécution, déclencheurs armés,
+  entités référencées) avec expurgation des données personnelles
+- **CI** : validation automatique (hassfest, HACS, pyflakes, import sous le vrai
+  Home Assistant, tests) à chaque push et chaque semaine
 
 ### Assist / commande vocale (LLM Tool Calling)
 - « Réveille-moi à 6h45 demain » → `smartwake_set_time`
