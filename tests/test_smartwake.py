@@ -1235,7 +1235,7 @@ async def test_migration_refuse_un_schema_plus_recent(coordinator):
 
 def test_aucun_destinataire_code_en_dur():
     """Régression : DEFAULT_NOTIFY_DEVICE désignait un téléphone précis
-    (notify.mobile_app_sm_g991u1). Une installation sans appareil détecté
+    (notify.mobile_app_test_device). Une installation sans appareil détecté
     envoyait ses notifications à un service inexistant."""
     import re
 
@@ -1714,7 +1714,7 @@ async def test_auto_detection_s_abstient_si_ambigu():
         ("light.cuisine", {}),
         ("media_player.tv_salon", {}),
         ("media_player.enceinte_cuisine", {}),
-        ("person.paul", {}),
+        ("person.test", {}),
         ("person.marie", {}),
     ])
     detecte = await _auto_detect_entities(hass)
@@ -1730,11 +1730,11 @@ async def test_auto_detection_accepte_un_candidat_unique():
     hass = _faux_hass_avec([
         ("cover.volet", {"device_class": "shutter"}),
         ("light.plafonnier", {}),
-        ("person.paul", {}),
+        ("person.test", {}),
     ])
     detecte = await _auto_detect_entities(hass)
     assert detecte["lumiere"] == "light.plafonnier"
-    assert detecte["presence"] == "person.paul"
+    assert detecte["presence"] == "person.test"
     assert detecte.get("volets") is None
 
 
@@ -2187,19 +2187,19 @@ def test_media_id_accepte_dict_et_chaine(coordinator=None):
 
 @pytest.mark.asyncio
 async def test_notify_entite_resolue_vers_le_service_de_plateforme(coordinator):
-    """Régression : « Service notify.sm_g991u1 introuvable ».
+    """Régression : « Service notify.test_device introuvable ».
 
     Une entité `notify.<objet>` est fournie par une plateforme dont le service
-    historique s'appelle `<plateforme>_<objet>`. L'entité `notify.sm_g991u1` de
+    historique s'appelle `<plateforme>_<objet>`. L'entité `notify.test_device` de
     l'application mobile correspond ainsi au service
-    `notify.mobile_app_sm_g991u1`. Chercher le service `notify.sm_g991u1`
+    `notify.mobile_app_test_device`. Chercher le service `notify.test_device`
     échouait, et les notifications partaient sans boutons Snooze/Stop.
     """
     coordinator.entry.data = {
-        **coordinator.entry.data, "notify_device": "notify.sm_g991u1",
+        **coordinator.entry.data, "notify_device": "notify.test_device",
     }
     coordinator.hass.services.has_service = lambda d, s: (
-        d == "notify" and s == "mobile_app_sm_g991u1"
+        d == "notify" and s == "mobile_app_test_device"
     )
     appels = []
 
@@ -2212,7 +2212,7 @@ async def test_notify_entite_resolue_vers_le_service_de_plateforme(coordinator):
 
     assert len(appels) == 1
     domaine, service, data = appels[0]
-    assert (domaine, service) == ("notify", "mobile_app_sm_g991u1")
+    assert (domaine, service) == ("notify", "mobile_app_test_device")
     assert "actions" in data["data"], "les boutons doivent être transmis"
 
 
@@ -2780,10 +2780,10 @@ async def test_diagnostics_expurgent_les_donnees_personnelles(coordinator):
 
     coordinator.entry.data = {
         **coordinator.entry.data,
-        "nom": "Réveil de Paul",
-        "notify_device": "notify.sm_g991u1",
-        "presence": "person.paul",
-        "tts_message": "Debout Paul",
+        "nom": "Réveil de test",
+        "notify_device": "notify.test_device",
+        "presence": "person.test",
+        "tts_message": "Debout",
     }
     coordinator.hass.data = {DOMAIN: {coordinator.entry.entry_id: coordinator}}
     await coordinator.set_actif(True)
@@ -2793,7 +2793,7 @@ async def test_diagnostics_expurgent_les_donnees_personnelles(coordinator):
     )
     brut = json.dumps(diag, ensure_ascii=False)
 
-    for secret in ("Paul", "sm_g991u1", "Debout"):
+    for secret in ("Test", "test_device", "Debout"):
         assert secret not in brut, f"fuite de « {secret} » dans les diagnostics"
 
     # mais l'état d'exécution utile est bien présent

@@ -350,7 +350,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
 
         Les entités sont nommées time.<slug(reveil+nom_entite)>_heure_<jour>.
         Pour un réveil « Chambre 1er Réveil » et une entité « Heure Lundi »,
-        l'entity_id est time.chambre_1er_reveil_heure_lundi.
+        l'entity_id est time.reveil_heure_lundi.
         Le slug combine le titre du réveil et le nom convivial de l'entité.
         """
         try:
@@ -1746,8 +1746,8 @@ class ReveilCoordinator(DataUpdateCoordinator):
         Seul ce service accepte une clé `data`, donc des boutons d'action. Or
         une entité `notify.<objet>` est fournie par une plateforme dont le
         service s'appelle `<plateforme>_<objet>` : pour l'application mobile,
-        l'entité `notify.sm_g991u1` correspond au service
-        `notify.mobile_app_sm_g991u1`. Chercher `notify.sm_g991u1` échouait donc,
+        l'entité `notify.<votre_appareil>` correspond au service
+        `notify.mobile_app_<votre_appareil>`. Chercher `notify.<votre_appareil>` échouait donc,
         et les notifications partaient sans boutons.
         """
         if not cible:
