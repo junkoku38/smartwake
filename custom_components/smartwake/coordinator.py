@@ -1260,6 +1260,30 @@ class ReveilCoordinator(DataUpdateCoordinator):
         self._reveil_en_cours = True
         self._snooze_count = 0
         self._statut = STATUT_RINGING
+
+        # Sauvegarde l'état initial des appareils pour les restaurer au stop.
+        self._etats_initiaux = {}
+        if cfg.get(CONF_MEDIA_PLAYER):
+            etat = self.hass.states.get(cfg[CONF_MEDIA_PLAYER])
+            if etat:
+                self._etats_initiaux[cfg[CONF_MEDIA_PLAYER]] = {
+                    "volume": etat.attributes.get("volume_level"),
+                    "state": etat.state,
+                }
+        if cfg.get(CONF_LUMIERE):
+            etat = self.hass.states.get(cfg[CONF_LUMIERE])
+            if etat:
+                self._etats_initiaux[cfg[CONF_LUMIERE]] = {
+                    "state": etat.state,
+                    "brightness": etat.attributes.get("brightness"),
+                }
+        if cfg.get(CONF_RADIATEUR):
+            etat = self.hass.states.get(cfg[CONF_RADIATEUR])
+            if etat:
+                self._etats_initiaux[cfg[CONF_RADIATEUR]] = {
+                    "preset": etat.attributes.get("preset_mode"),
+                    "state": etat.state,
+                }
         self._log_event("Réveil déclenché")
         self._fire_event("smartwake_triggered", heure=cfg.get(CONF_HEURE, "07:00"), prochain=self._prochain.isoformat() if self._prochain else None)
         self._increment_stat("total_declenchements")
@@ -2071,24 +2095,68 @@ class ReveilCoordinator(DataUpdateCoordinator):
             self._cancel_mouvement = None
 
         cfg = self.entry.data
-        if cfg.get(CONF_MUSIQUE_ACTIVEE) and cfg.get(CONF_MEDIA_PLAYER):
-            try:
-                await self.hass.services.async_call(
-                    "media_player", "media_stop",
-                    {"entity_id": cfg[CONF_MEDIA_PLAYER]},
-                    blocking=True,
-                )
-            except Exception as exc:
-                _LOGGER.error("Erreur stop musique: %s", exc)
-
-        if cfg.get(CONF_LUMIERE_ACTIVEE) and cfg.get(CONF_LUMIERE):
-            try:
-                await self.hass.services.async_call(
-                    "light", "turn_off", {"entity_id": cfg[CONF_LUMIERE]},
-                    blocking=True,
-                )
-            except Exception as exc:
-                _LOGGER.error("Erreur extinction: %s", exc)
+        # Restaure l'état initial des appareils modifiés pendant le réveil.
+        # Le volume du Sonos reste à 30% après le stop ; on le remet à sa
+        # valeur d'origine. La lumière est éteinte, sauf si elle était allumée
+        # avant le réveil. Le radiateur revient à son preset d'origine.
+        if hasattr(self, "_etats_initiaux") and self._etats_initiaux:
+            for entity_id, etat in self._etats_initiaux.items():
+                domaine = entity_id.split(".")[0]
+                try:
+                    if domaine == "media_player":
+                        await self.hass.services.async_call(
+                            "media_player", "media_stop",
+                            {"entity_id": entity_id}, blocking=True,
+                        )
+                        if etat.get("volume") is not None:
+                            await self.hass.services.async_call(
+                                "media_player", "volume_set",
+                                {"entity_id": entity_id,
+                                 "volume_level": etat["volume"]},
+                                blocking=True,
+                            )
+                    elif domaine == "light":
+                        if etat.get("state") == "on":
+                            charge = {"entity_id": entity_id}
+                            if etat.get("brightness") is not None:
+                                charge["brightness"] = etat["brightness"]
+                            await self.hass.services.async_call(
+                                "light", "turn_on", charge, blocking=True,
+                            )
+                        else:
+                            await self.hass.services.async_call(
+                                "light", "turn_off",
+                                {"entity_id": entity_id}, blocking=True,
+                            )
+                    elif domaine == "climate":
+                        if etat.get("preset") is not None:
+                            await self.hass.services.async_call(
+                                "climate", "set_preset_mode",
+                                {"entity_id": entity_id,
+                                 "preset_mode": etat["preset"]},
+                                blocking=True,
+                            )
+                except Exception as exc:
+                    _LOGGER.error("Erreur restauration %s: %s", entity_id, exc)
+        else:
+            # Pas d'état initial sauvegardé : comportement par défaut
+            if cfg.get(CONF_MUSIQUE_ACTIVEE) and cfg.get(CONF_MEDIA_PLAYER):
+                try:
+                    await self.hass.services.async_call(
+                        "media_player", "media_stop",
+                        {"entity_id": cfg[CONF_MEDIA_PLAYER]},
+                        blocking=True,
+                    )
+                except Exception as exc:
+                    _LOGGER.error("Erreur stop musique: %s", exc)
+            if cfg.get(CONF_LUMIERE_ACTIVEE) and cfg.get(CONF_LUMIERE):
+                try:
+                    await self.hass.services.async_call(
+                        "light", "turn_off",
+                        {"entity_id": cfg[CONF_LUMIERE]}, blocking=True,
+                    )
+                except Exception as exc:
+                    _LOGGER.error("Erreur extinction: %s", exc)
 
         # Ferme la notification persistante : le réveil est arrêté.
         try:
