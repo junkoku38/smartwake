@@ -2172,10 +2172,32 @@ class ReveilCoordinator(DataUpdateCoordinator):
         briefing_msg = None
         if cfg.get(CONF_AI_BRIEFING):
             from .ai import generate_briefing
-            briefing_msg = await generate_briefing(self.hass, cfg, self.entry.title)
+            try:
+                briefing_msg = await generate_briefing(self.hass, cfg, self.entry.title)
+            except Exception as exc:
+                _LOGGER.error("Erreur briefing IA au stop: %s", exc)
 
-        if briefing_msg and cfg.get(CONF_TTS_ENTITY):
-            await self._tts_speak(briefing_msg)
+        if briefing_msg:
+            # Notification Android + persistante
+            await self._notifier(
+                cfg.get(CONF_NOTIFY_DEVICE),
+                "⏰ Briefing SmartWAKE", briefing_msg
+            )
+            try:
+                await self.hass.services.async_call(
+                    "persistent_notification", "create",
+                    {
+                        "title": "⏰ Briefing SmartWAKE",
+                        "message": briefing_msg,
+                        "notification_id": f"smartwake_briefing_{self.entry.entry_id}",
+                    },
+                    blocking=True,
+                )
+            except Exception as exc:
+                _LOGGER.error("Erreur notif persistante briefing: %s", exc)
+            # TTS
+            if cfg.get(CONF_TTS_ENTITY):
+                await self._tts_speak(briefing_msg)
         elif cfg.get(CONF_TTS_ACTIVEE) and cfg.get(CONF_TTS_ENTITY):
             await self._tts_briefing()
 
