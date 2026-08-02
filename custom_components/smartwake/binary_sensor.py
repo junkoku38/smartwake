@@ -135,7 +135,17 @@ class ReveilEnCours(_BaseBinary):
 
 
 class ReveilFerie(_BaseBinary):
-    """Jour férié — interroge le capteur workday configuré (supervisable dans History)."""
+    """Jour férié — lit le capteur configuré.
+
+    Accepte deux sémantiques :
+    - capteur workday (binary_sensor) : « on » = travaillé, « off » = férié
+    - capteur de jour férié (input_boolean, binary_sensor) :
+      « on » = férié, « off » = pas férié
+
+    Le sens est détecté automatiquement selon le domaine de l'entité :
+    un input_boolean est « on » = férié (logique directe),
+    un binary_sensor workday est « off » = férié (logique inversée).
+    """
 
     @property
     def is_on(self) -> bool:
@@ -146,11 +156,16 @@ class ReveilFerie(_BaseBinary):
         state = self.hass.states.get(sensor)
         if state is None:
             return False
-        # workday_sensor : "off" = férié/weekend, "on" = travaillé
-        # On exclut les weekends (sonde dédiée)
+        # On exclut les weekends (sonde dédiée ReveilWeekend)
         if self._is_weekend():
             return False
-        return state.state == "off"
+        domaine = sensor.split(".")[0]
+        if domaine == "input_boolean":
+            # Logique directe : on = férié
+            return state.state == "on"
+        else:
+            # Capteur workday : off = férié
+            return state.state == "off"
 
     def _is_weekend(self) -> bool:
         return dt_util.now().weekday() in (5, 6)
