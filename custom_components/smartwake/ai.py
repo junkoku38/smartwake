@@ -224,6 +224,13 @@ def contexte_travail(hass: HomeAssistant, cfg: dict) -> dict[str, Any]:
         if etat is not None and etat.state not in ("unknown", "unavailable"):
             jour_travaille = etat.state == "on"
 
+    # Fallback : si le capteur est absent ou indisponible, on se base sur
+    # le jour de la semaine. Un lundi-vendredi est supposé travaillé, un
+    # weekend ne l'est pas. Sans cela, l'IA recevait « situation de travail
+    # inconnue » et produisait un briefing de repos en pleine semaine.
+    if jour_travaille is None:
+        jour_travaille = dt_util.now().weekday() < 5
+
     mode = cfg.get(CONF_MODE_TRAVAIL) or MODE_TRAVAIL_INDETERMINE
 
     entite = cfg.get(CONF_MODE_TRAVAIL_ENTITY)
@@ -291,7 +298,11 @@ async def generate_briefing(
     agenda = cfg.get(CONF_AGENDA_ENTITY, "")
 
     weather_state = hass.states.get(weather)
-    weather_str = f"{weather_state.state}, {weather_state.attributes.get('temperature', '?')}°C" if weather_state else "indisponible"
+    weather_str = (
+        f"{weather_state.state}, {weather_state.attributes.get('temperature', '?')}°C"
+        if weather_state and weather_state.state
+        else "indisponible"
+    )
 
     # Le temps de trajet n'a pas de sens en télétravail
     trajet_str = ""
