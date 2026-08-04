@@ -715,7 +715,13 @@ class ReveilCoordinator(DataUpdateCoordinator):
             _LOGGER.debug("Erreur fire event %s: %s", event_type, exc)
 
     def _increment_stat(self, key: str) -> None:
-        """Incrémente un compteur de statistiques."""
+        """Incrémente un compteur de statistiques.
+
+        Ne réinitialise pas _stats s'il existe déjà : les valeurs sont
+        restaurées par StatsSensor (RestoreEntity) au démarrage, et un
+        _increment_stat appelé avant que la restauration ne soit effective
+        ne doit pas écraser les valeurs restaurées avec des zéros.
+        """
         if not hasattr(self, "_stats") or self._stats is None:
             self._stats = {
                 "total_declenchements": 0,
