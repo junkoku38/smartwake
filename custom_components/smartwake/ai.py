@@ -225,9 +225,7 @@ def contexte_travail(hass: HomeAssistant, cfg: dict) -> dict[str, Any]:
             jour_travaille = etat.state == "on"
 
     # Fallback : si le capteur est absent ou indisponible, on se base sur
-    # le jour de la semaine. Un lundi-vendredi est supposé travaillé, un
-    # weekend ne l'est pas. Sans cela, l'IA recevait « situation de travail
-    # inconnue » et produisait un briefing de repos en pleine semaine.
+    # le jour de la semaine (lun-ven = travaillé).
     if jour_travaille is None:
         jour_travaille = dt_util.now().weekday() < 5
 

@@ -142,13 +142,9 @@ class ReveilFerie(_BaseBinary):
     - capteur de jour férié (input_boolean, binary_sensor) :
       « on » = férié, « off » = pas férié
 
-    Le sens est détecté automatiquement selon le nom de l'entité :
-    un capteur contenant « workday » est inversé (off = férié),
-    tout autre capteur est en logique directe (on = férié).
-    La détection par domaine (input_boolean vs binary_sensor) était trop
-    fragile : un binary_sensor.jour_ferie était traité comme workday et
-    inversé → le réveil sonnait les jours fériés et se taisait les jours
-    travaillés.
+    Le sens est détecté automatiquement selon le domaine de l'entité :
+    un input_boolean est « on » = férié (logique directe),
+    un binary_sensor workday est « off » = férié (logique inversée).
     """
 
     @property
