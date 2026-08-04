@@ -2,8 +2,7 @@
   "name": "SmartWAKE",
   "content_in_root": false,
   "render_readme": true,
-  "zip_release": true,
-  "filename": "smartwake.zip",
+  "zip_release": false,
   "country": ["FR"],
   "homeassistant": "2024.1.0"
 }
