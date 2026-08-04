@@ -350,12 +350,12 @@ class ReveilCoordinator(DataUpdateCoordinator):
 
         Les entités sont nommées time.<slug(reveil+nom_entite)>_heure_<jour>.
         Pour un réveil « Chambre 1er Réveil » et une entité « Heure Lundi »,
-        l'entity_id est time.reveil_heure_lundi.
+        l'entity_id est time.chambre_1er_reveil_heure_lundi.
         Le slug combine le titre du réveil et le nom convivial de l'entité.
         """
         try:
-            from homeassistant.util import slugify as ha_slugify
-            return ha_slugify(self.entry.title)
+            from homeassistant.util import slugify
+            return slugify(self.entry.title)
         except ImportError:
             return self.entry.title.lower().replace(" ", "_")
 
@@ -713,13 +713,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
             _LOGGER.debug("Erreur fire event %s: %s", event_type, exc)
 
     def _increment_stat(self, key: str) -> None:
-        """Incrémente un compteur de statistiques.
-
-        Ne réinitialise pas _stats s'il existe déjà : les valeurs sont
-        restaurées par StatsSensor (RestoreEntity) au démarrage, et un
-        _increment_stat appelé avant que la restauration ne soit effective
-        ne doit pas écraser les valeurs restaurées avec des zéros.
-        """
+        """Incrémente un compteur de statistiques."""
         if not hasattr(self, "_stats") or self._stats is None:
             self._stats = {
                 "total_declenchements": 0,
@@ -831,36 +825,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
             self._internal_update = False
 
     async def set_heure(self, heure: str) -> None:
-        """Met à jour l'heure du réveil.
-
-        En mode « par_jour », l'heure de référence (CONF_HEURE) ne sert à rien
-        : ce sont les entités time.<nom>_heure_<jour> qui pilotent la
-        planification. Une suggestion IA acceptée via notification écrivait
-        seulement CONF_HEURE, qui était ensuite ignorée par
-        _calculer_prochain en mode par_jour — l'heure suggérée était perdue.
-        On écrit aussi dans l'entité du jour courant si le mode est par_jour.
-        """
         self._ecrire_config(**{CONF_HEURE: heure})
-        cfg = self.entry.data
-        if cfg.get(CONF_MODE_HEURE, "unique") == "par_jour":
-            jour_courant = JOURS_LIST[dt_util.now().weekday()]
-            entity_id = f"time.{self.entity_id_prefix}_heure_{jour_courant}"
-            try:
-                await self.hass.services.async_call(
-                    "time", "set_value",
-                    {"entity_id": entity_id, "time": heure},
-                    blocking=True,
-                )
-                _LOGGER.info(
-                    "Heure %s appliquée à %s (mode par_jour, jour courant)",
-                    heure, entity_id,
-                )
-            except Exception as exc:
-                _LOGGER.warning(
-                    "Impossible d'appliquer l'heure à %s: %s. "
-                    "L'heure de référence a été mise à jour mais le jour "
-                    "courant n'a pas été modifié.", entity_id, exc,
-                )
         if self._actif:
             self._planifier_trigger()
         self._notify()
@@ -987,10 +952,13 @@ class ReveilCoordinator(DataUpdateCoordinator):
         cfg = self.entry.data
         mode_jours = cfg.get(CONF_JOURS, "tous")
         jours_perso = cfg.get(CONF_JOURS_PERSO, [])
-        mode_heure = cfg.get(CONF_MODE_HEURE, "unique")
-        heures_par_jour = self._heures_par_jour() if mode_heure == "par_jour" else None
+        heures_par_jour = self._heures_par_jour()
         jours = _jours_actifs(mode_jours, jours_perso, heures_par_jour)
         now = dt_util.now()
+
+        # Heure par jour ou heure unique ?
+        mode_heure = cfg.get(CONF_MODE_HEURE, "unique")
+        heures_par_jour = self._heures_par_jour()
 
         heure_defaut = _parse_heure(cfg.get(CONF_HEURE, "07:00"))
 
@@ -1058,18 +1026,9 @@ class ReveilCoordinator(DataUpdateCoordinator):
         On ne peut pas partir de `now().replace(hour=...)` : sur un datetime
         tz-aware, l'offset UTC de « maintenant » est conservé, ce qui décale
         l'instant d'une heure le jour du changement d'heure.
-
-        HA 2025+ expose `dt_util.get_default_time_zone()` ; les versions
-        antérieures utilisent `dt_util.DEFAULT_TIME_ZONE`. On teste les deux
-        pour éviter un datetime naïf qui casserait les comparaisons avec
-        `dt_util.now()` (tz-aware) — TypeError ou résultats faux.
         """
         naif = datetime.combine(jour, heure)
-        tz = None
-        if hasattr(dt_util, "get_default_time_zone"):
-            tz = dt_util.get_default_time_zone()
-        if tz is None:
-            tz = getattr(dt_util, "DEFAULT_TIME_ZONE", None)
+        tz = getattr(dt_util, "DEFAULT_TIME_ZONE", None)
         return naif.replace(tzinfo=tz) if tz is not None else naif
 
     def _mode_vacances_entite(self) -> bool:
@@ -1787,8 +1746,8 @@ class ReveilCoordinator(DataUpdateCoordinator):
         Seul ce service accepte une clé `data`, donc des boutons d'action. Or
         une entité `notify.<objet>` est fournie par une plateforme dont le
         service s'appelle `<plateforme>_<objet>` : pour l'application mobile,
-        l'entité `notify.<votre_appareil>` correspond au service
-        `notify.mobile_app_<votre_appareil>`. Chercher `notify.<votre_appareil>` échouait donc,
+        l'entité `notify.sm_g991u1` correspond au service
+        `notify.mobile_app_sm_g991u1`. Chercher `notify.sm_g991u1` échouait donc,
         et les notifications partaient sans boutons.
         """
         if not cible:
@@ -2347,7 +2306,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
             _LOGGER.error("Erreur TTS: %s", exc)
 
     async def _verif_lever_ia(self) -> None:
-        """Vérifie 10 min après le Stop si la personne est encore au lit (IA)."""
+        """Vérifie 10 min après le Stop si la personne est encore au lit (caméra+IA)."""
         await asyncio.sleep(10 * 60)
         if self._reveil_en_cours:
             return  # pas encore stoppé définitivement
@@ -2356,22 +2315,10 @@ class ReveilCoordinator(DataUpdateCoordinator):
         if encore_au_lit:
             _LOGGER.info("Vérif IA: personne encore au lit — relance du réveil")
             self._log_event("Vérif IA: personne encore au lit — relance")
+            # Passait par _escalade(0), qui sort aussitôt puisque le réveil est
+            # justement arrêté à ce stade : la détection n'avait aucun effet.
+            # On applique le niveau max directement.
             self._fire_event("smartwake_escalade", level="max")
-            # Restaurer l'état de sonnerie : sans cela, stop() refusait
-            # d'agir (_reveil_en_cours=False, statut=DONE) et la relance
-            # devenait incontrôlable — musique et lumière à fond sans moyen
-            # d'arrêter.
-            self._reveil_en_cours = True
-            self._statut = STATUT_RINGING
-            self._notify()
-            # Renvoyer la notification actionnable pour que l'utilisateur
-            # puisse arrêter la relance.
-            cfg = self.entry.data
-            if cfg.get(CONF_NOTIFICATION_ACTIVEE):
-                try:
-                    await self._envoyer_notification()
-                except Exception as exc:
-                    _LOGGER.error("Erreur notification relance: %s", exc)
             await self._escalade_niveau(1.0, 100, "max")
 
     async def _run_custom_ai(self, trigger: str) -> None:
@@ -2437,10 +2384,10 @@ class ReveilCoordinator(DataUpdateCoordinator):
                 res = await ai.generate_briefing(self.hass, cfg, self.entry.title)
                 if res:
                     await self._notifier(
-                        cfg.get(CONF_NOTIFY_DEVICE), "⏰ Briefing SmartWAKE", res
+                        cfg.get("notify_device"), "⏰ Briefing SmartWAKE", res
                     )
                     # Tester aussi le TTS si configuré
-                    if cfg.get(CONF_TTS_ENTITY):
+                    if cfg.get("tts_entity"):
                         await self._tts_speak(res)
             elif tache == "musique":
                 options = [self._media_id(cfg.get(cle)) for cle in
@@ -2455,7 +2402,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
                 res = await ai.suggest_wake_time(self.hass, cfg, cfg.get(CONF_HEURE, "07:00"))
                 if res:
                     await self._notifier(
-                        cfg.get(CONF_NOTIFY_DEVICE),
+                        cfg.get("notify_device"),
                         "⏰ Suggestion SmartWAKE", res
                     )
             elif tache == "bilan":
@@ -2464,7 +2411,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
                 )
                 if res:
                     await self._notifier(
-                        cfg.get(CONF_NOTIFY_DEVICE), "🛏️ Bilan sommeil", res
+                        cfg.get("notify_device"), "🛏️ Bilan sommeil", res
                     )
             elif tache == "lever":
                 probleme = await ai.diagnostic_presence_lit(self.hass, cfg)
@@ -2482,7 +2429,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
                         # ferait le vrai déclencheur : sinon on teste le texte
                         # mais pas la livraison.
                         await self._notifier(
-                            cfg.get(CONF_NOTIFY_DEVICE),
+                            cfg.get("notify_device"),
                             f"🤖 SmartWAKE IA ({declencheur})", m
                         )
                 res = "\n".join(messages) if messages else None
@@ -2506,7 +2453,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
         """Génère et envoie un bilan de sommeil hebdomadaire via IA."""
         from .ai import generate_weekly_report
         cfg = self.entry.data
-        if not cfg.get(CONF_AI_BILAN_HEBDO, False):
+        if not cfg.get("ai_bilan_hebdo", False):
             return
         # Les statistiques d'apprentissage étaient collectées dans le .storage
         # mais get_stats() n'avait aucun appelant : le bilan recevait la chaîne

@@ -150,10 +150,10 @@ class ReveilSkipSwitch(SwitchEntity, RestoreEntity):
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
-        # La restauration du saut au redémarrage était dangereuse : _skip_date
-        # étant perdu, le saut s'appliquait à tous les jours suivants jusqu'à
-        # un arrêt manuel. On ne restaure plus le saut : un saut est ponctuel
-        # par nature, et un redémarrage HA invalide la date visée.
+        if not self.coordinator.skip_prochain:
+            last = await self.async_get_last_state()
+            if last is not None and last.state == "on":
+                await self.coordinator.set_skip(True)
         self.async_on_remove(self.coordinator.async_add_listener(self._handle_update))
 
     def _handle_update(self) -> None:

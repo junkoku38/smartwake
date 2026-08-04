@@ -57,55 +57,37 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
         for eid in call.data.get(ATTR_ENTITY_ID, []):
             coord = _get_coordinator(hass, eid)
             if coord:
-                try:
-                    await coord.declencher_manuel()
-                except Exception as exc:
-                    _LOGGER.error("Erreur declencher %s: %s", eid, exc)
+                await coord.declencher_manuel()
 
     async def _handle_snooze(call: ServiceCall) -> None:
         for eid in call.data.get(ATTR_ENTITY_ID, []):
             coord = _get_coordinator(hass, eid)
             if coord:
-                try:
-                    await coord.snooze()
-                except Exception as exc:
-                    _LOGGER.error("Erreur snooze %s: %s", eid, exc)
+                await coord.snooze()
 
     async def _handle_stop(call: ServiceCall) -> None:
         for eid in call.data.get(ATTR_ENTITY_ID, []):
             coord = _get_coordinator(hass, eid)
             if coord:
-                try:
-                    await coord.stop()
-                except Exception as exc:
-                    _LOGGER.error("Erreur stop %s: %s", eid, exc)
+                await coord.stop()
 
     async def _handle_skip(call: ServiceCall) -> None:
         for eid in call.data.get(ATTR_ENTITY_ID, []):
             coord = _get_coordinator(hass, eid)
             if coord:
-                try:
-                    await coord.sauter_prochain()
-                except Exception as exc:
-                    _LOGGER.error("Erreur skip %s: %s", eid, exc)
+                await coord.sauter_prochain()
 
     async def _handle_reset(call: ServiceCall) -> None:
         for eid in call.data.get(ATTR_ENTITY_ID, []):
             coord = _get_coordinator(hass, eid)
             if coord:
-                try:
-                    await coord.reset()
-                except Exception as exc:
-                    _LOGGER.error("Erreur reset %s: %s", eid, exc)
+                await coord.reset()
 
     async def _handle_bilan_hebdo(call: ServiceCall) -> None:
         for eid in call.data.get(ATTR_ENTITY_ID, []):
             coord = _get_coordinator(hass, eid)
             if coord:
-                try:
-                    await coord.bilan_hebdo_ia()
-                except Exception as exc:
-                    _LOGGER.error("Erreur bilan_hebdo %s: %s", eid, exc)
+                await coord.bilan_hebdo_ia()
 
     hass.services.async_register(DOMAIN, SERVICE_DECLENCHER, _handle_declencher, schema=SERVICE_SCHEMA)
     hass.services.async_register(DOMAIN, SERVICE_SNOOZE, _handle_snooze, schema=SERVICE_SCHEMA)
