@@ -1,7 +1,7 @@
 {
   "domain": "smartwake",
   "name": "SmartWAKE",
-  "version": "2.27.8",
+  "version": "2.27.9",
   "config_flow": true,
   "documentation": "https://github.com/junkoku38/smartwake",
   "issue_tracker": "https://github.com/junkoku38/smartwake/issues",
