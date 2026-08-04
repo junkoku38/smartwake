@@ -307,7 +307,14 @@ async def _auto_detect_entities(hass: HomeAssistant) -> dict[str, str | None]:
     detected[CONF_VOLETS] = None
 
     # Entités de lecture seule : aucun risque d'action indésirable
-    workdays = [e for e in _etats("binary_sensor") if "workday" in e.entity_id]
+    # On exclut les entités de monitoring (Sentinel, etc.) qui contiennent
+    # "workday" dans leur nom mais ne sont pas des capteurs workday réels.
+    # Ces entités surveillent l'intégration workday au lieu d'exposer son état.
+    workdays = [
+        e for e in _etats("binary_sensor")
+        if "workday" in e.entity_id
+        and not e.entity_id.startswith("binary_sensor.sentinel_")
+    ]
     detected[CONF_WORKDAY_SENSOR] = workdays[0].entity_id if len(workdays) == 1 else None
 
     personnes = _etats("person")
