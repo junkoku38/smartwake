@@ -352,14 +352,12 @@ class ReveilCoordinator(DataUpdateCoordinator):
         Pour un réveil « Chambre 1er Réveil » et une entité « Heure Lundi »,
         l'entity_id est time.reveil_heure_lundi.
         Le slug combine le titre du réveil et le nom convivial de l'entité.
-
-        Doit utiliser const.slugify (NFKD) et non HA.util.slugify : les deux
-        produisent des slugs différents pour les noms accentués
-        (« Réveil Élève » → « reveil_eleve » vs « reveil_leve »), si bien que
-        _heures_par_jour ne trouvait pas les entités time.* et le mode
-        par_jour ne fonctionnait pas avec un nom accentué.
         """
-        return slugify(self.entry.title)
+        try:
+            from homeassistant.util import slugify as ha_slugify
+            return ha_slugify(self.entry.title)
+        except ImportError:
+            return self.entry.title.lower().replace(" ", "_")
 
     def _heures_par_jour(self) -> dict[int, str | None]:
         """Heures configurées par jour de la semaine (0 = lundi).
