@@ -2325,6 +2325,7 @@ async def test_repli_sans_structure_si_ollama_echoue(coordinator):
     assert len(appels) == 2  # appel initial + repli
 
 
+@pytest.mark.asyncio
 async def test_pas_de_repli_si_modele_indisponible(coordinator):
     """Si le modèle est vraiment indisponible, le repli ne sert à rien."""
     from custom_components.smartwake.ai import _call_ai_task

@@ -6,6 +6,7 @@
   "documentation": "https://github.com/junkoku38/smartwake",
   "issue_tracker": "https://github.com/junkoku38/smartwake/issues",
   "dependencies": [],
+  "after_dependencies": ["recorder"],
   "codeowners": [
     "@junkoku38"
   ],
