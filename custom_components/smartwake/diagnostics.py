@@ -68,6 +68,8 @@ async def async_get_config_entry_diagnostics(
         "skip_prochain": coordinator.skip_prochain,
         "skip_date": coordinator._skip_date.isoformat() if coordinator._skip_date else None,
         "aube_niveau": coordinator._aube_niveau,
+        "etats_initiaux": bool(coordinator._etats_initiaux),
+        "pending_ringing": coordinator._pending_ringing,
         # Déclencheurs armés : le plus souvent en cause quand le réveil ne sonne pas
         "trigger_arme": coordinator._cancel_trigger is not None,
         "prewake_arme": coordinator._cancel_prewake is not None,

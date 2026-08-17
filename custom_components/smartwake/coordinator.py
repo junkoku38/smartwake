@@ -226,6 +226,18 @@ class ReveilCoordinator(DataUpdateCoordinator):
         self._reveil_en_cours = False
         self._snooze_count = 0
         self._skip_prochain = False
+        # États d'origine des appareils modifiés pendant le cycle (prewake
+        # inclus), pour les restaurer au stop. Capturés au démarrage du
+        # pré-réveil — avant que l'aube ne modifie la lumière — et non à H,
+        # sinon on restaurait l'état post-aube au lieu de l'état réel d'origine.
+        self._etats_initiaux: dict[str, dict[str, Any]] = {}
+        # Vrai si la sonnerie (H) doit être déclenchée à la reprise du snooze
+        # alors que le cycle en cours était encore en phase prewake.
+        self._pending_ringing = False
+        # Statut avant le snooze (prewake ou ringing), pour reprendre la bonne
+        # phase à l'issue : un snooze pendant l'aube reprend l'aube, un snooze
+        # pendant la sonnerie reprend la sonnerie.
+        self._statut_avant_snooze: str | None = None
         # Date de l'occurrence sautée, pour que le saut ne vaille qu'une fois
         self._skip_date: date | None = None
         # Marque une écriture de config provoquée par une entité
@@ -749,6 +761,9 @@ class ReveilCoordinator(DataUpdateCoordinator):
             self._reveil_en_cours = False
             self._aube_faite = False
             self._snooze_fin = None
+            self._etats_initiaux = {}
+            self._pending_ringing = False
+            self._statut_avant_snooze = None
             self._log_event("Réveil désactivé")
             self._fire_event("smartwake_deactivated")
         self._notify()
@@ -1166,6 +1181,11 @@ class ReveilCoordinator(DataUpdateCoordinator):
             return
 
         self._statut = STATUT_PREWAKE
+        # Le pré-réveil fait partie du cycle arrêtable : stop() et snooze()
+        # doivent pouvoir agir pendant l'aube. Sans cela, le bouton Stop
+        # laissait tourner radiateur, chauffe-eau et aube pendant jusqu'à
+        # 45 min, et le snooze était refusé (garde sur _reveil_en_cours).
+        self._reveil_en_cours = True
         self._fire_event("smartwake_prewake", phase="demarrage")
         self._notify()
         # La tâche était créée sans référence : ni stop() ni async_shutdown()
@@ -1183,6 +1203,9 @@ class ReveilCoordinator(DataUpdateCoordinator):
         _LOGGER.info("Réveil '%s' annulé — %s", self.entry.title, motif)
         self._aube_faite = False
         self._reveil_en_cours = False
+        self._etats_initiaux = {}
+        self._pending_ringing = False
+        self._statut_avant_snooze = None
         self._statut = STATUT_IDLE if self._actif else STATUT_INACTIF
         self._notify()
 
@@ -1191,7 +1214,16 @@ class ReveilCoordinator(DataUpdateCoordinator):
         """Phase de réveil principal."""
         # Déclencheur à usage unique : il est consommé
         self._cancel_trigger = None
-        if self._reveil_en_cours:
+        # Le pré-réveil met _reveil_en_cours à True pour autoriser snooze/stop
+        # pendant l'aube. À H, il faut transitionner vers la sonnerie : on ne
+        # sort donc que si la sonnerie est déjà en cours (ringing) ou si on
+        # est en snooze (la reprise relancera la sonnerie via _pending_ringing).
+        if self._statut == STATUT_RINGING:
+            return
+        if self._statut == STATUT_SNOOZED:
+            # La sonnerie reprendra à la fin du snooze ; on signale qu'il faut
+            # alors passer en ringing plutôt que de reprendre l'aube.
+            self._pending_ringing = True
             return
         if not self._sonne_aujourd_hui(now):
             self._abandonner_reveil("conditions du jour non remplies")
@@ -1226,10 +1258,60 @@ class ReveilCoordinator(DataUpdateCoordinator):
 
     # ── Phase pré-réveil ───────────────────────────────────────
 
+    def _capturer_etats_initiaux(self) -> None:
+        """Snapshot l'état des appareils avant de les modifier pendant le cycle.
+
+        Doit être appelé au tout début du pré-réveil (avant d'allumer le
+        radiateur, le chauffe-eau ou l'aube) : la lumière est allumée pendant
+        l'aube, donc la capturer à H restaurait l'état post-aube au lieu de
+        l'état d'origine. Ne fait rien si un snapshot existe déjà (cas où le
+        pré-réveil a déjà capturé et où _executer_cycle est atteint normalement
+        à H — on ne veut pas écraser la bonne capture).
+        """
+        if self._etats_initiaux:
+            return
+        cfg = self.entry.data
+        if cfg.get(CONF_MEDIA_PLAYER):
+            etat = self.hass.states.get(cfg[CONF_MEDIA_PLAYER])
+            if etat:
+                self._etats_initiaux[cfg[CONF_MEDIA_PLAYER]] = {
+                    "volume": etat.attributes.get("volume_level"),
+                    "state": etat.state,
+                }
+        if cfg.get(CONF_LUMIERE):
+            etat = self.hass.states.get(cfg[CONF_LUMIERE])
+            if etat:
+                self._etats_initiaux[cfg[CONF_LUMIERE]] = {
+                    "state": etat.state,
+                    "brightness": etat.attributes.get("brightness"),
+                }
+        if cfg.get(CONF_RADIATEUR):
+            etat = self.hass.states.get(cfg[CONF_RADIATEUR])
+            if etat:
+                self._etats_initiaux[cfg[CONF_RADIATEUR]] = {
+                    "preset": etat.attributes.get("preset_mode"),
+                    "state": etat.state,
+                }
+
     async def _executer_prewake(self) -> None:
         """Pré-chauffage, simulation d'aube, café, chauffe-eau."""
         cfg = self.entry.data
         _LOGGER.info("Pré-réveil démarré pour '%s'", self.entry.title)
+
+        # Capture l'état d'origine AVANT de modifier quoi que ce soit. La
+        # restauration au stop se basait sur l'état à H, donc post-aube : la
+        # lumière revenait allumée au lieu d'être éteinte.
+        self._capturer_etats_initiaux()
+
+        # Notification actionnable dès le pré-réveil : les boutons Snooze/Stop
+        # doivent être disponibles pendant l'aube, pas seulement à H. Sans
+        # cela, l'utilisateur ne pouvait pas interrompre l'aube qui dure
+        # jusqu'à 60 min.
+        if cfg.get(CONF_NOTIFICATION_ACTIVEE):
+            try:
+                await self._envoyer_notification()
+            except Exception as exc:
+                _LOGGER.error("Erreur notification pré-réveil: %s", exc)
 
         # Chauffage
         radiateur = cfg.get(CONF_RADIATEUR)
@@ -1297,28 +1379,11 @@ class ReveilCoordinator(DataUpdateCoordinator):
         self._statut = STATUT_RINGING
 
         # Sauvegarde l'état initial des appareils pour les restaurer au stop.
-        self._etats_initiaux = {}
-        if cfg.get(CONF_MEDIA_PLAYER):
-            etat = self.hass.states.get(cfg[CONF_MEDIA_PLAYER])
-            if etat:
-                self._etats_initiaux[cfg[CONF_MEDIA_PLAYER]] = {
-                    "volume": etat.attributes.get("volume_level"),
-                    "state": etat.state,
-                }
-        if cfg.get(CONF_LUMIERE):
-            etat = self.hass.states.get(cfg[CONF_LUMIERE])
-            if etat:
-                self._etats_initiaux[cfg[CONF_LUMIERE]] = {
-                    "state": etat.state,
-                    "brightness": etat.attributes.get("brightness"),
-                }
-        if cfg.get(CONF_RADIATEUR):
-            etat = self.hass.states.get(cfg[CONF_RADIATEUR])
-            if etat:
-                self._etats_initiaux[cfg[CONF_RADIATEUR]] = {
-                    "preset": etat.attributes.get("preset_mode"),
-                    "state": etat.state,
-                }
+        # Délégué à _capturer_etats_initiaux() qui ne fait rien si le pré-réveil
+        # a déjà capturé (cas normal). Pour un déclenchement manuel
+        # (declencher_manuel) qui court-circuite le pré-réveil, la capture se
+        # fait ici à H — comportement inchangé.
+        self._capturer_etats_initiaux()
         self._log_event("Réveil déclenché")
         self._fire_event("smartwake_triggered", heure=cfg.get(CONF_HEURE, "07:00"), prochain=self._prochain.isoformat() if self._prochain else None)
         self._increment_stat("total_declenchements")
@@ -1984,6 +2049,9 @@ class ReveilCoordinator(DataUpdateCoordinator):
             return
 
         self._snooze_count += 1
+        # Mémorise la phase d'origine pour la reprise : un snooze déclenché
+        # pendant l'aube (prewake) doit reprendre l'aube, pas la sonnerie.
+        self._statut_avant_snooze = self._statut
         self._statut = STATUT_SNOOZED
         self._snooze_fin = dt_util.now() + timedelta(
             minutes=self.entry.data.get(CONF_SNOOZE_DUREE, DEFAULT_SNOOZE_DUREE)
@@ -2026,7 +2094,12 @@ class ReveilCoordinator(DataUpdateCoordinator):
         self._cancel_snooze = self.hass.async_create_task(self._reprendre_apres_snooze())
 
     async def _reprendre_apres_snooze(self) -> None:
-        """Relance la sonnerie à l'issue du snooze."""
+        """Relance l'aube ou la sonnerie à l'issue du snooze.
+
+        Un snooze déclenché pendant l'aube (prewake) reprend l'aube ; un snooze
+        pendant la sonnerie reprend la sonnerie. Si l'heure H est tombée
+        pendant le snooze, _pending_ringing force la reprise en sonnerie.
+        """
         cfg = self.entry.data
         duree = cfg.get(CONF_SNOOZE_DUREE, DEFAULT_SNOOZE_DUREE)
         try:
@@ -2046,8 +2119,29 @@ class ReveilCoordinator(DataUpdateCoordinator):
                 self.entry.title, self._reveil_en_cours, self._statut,
             )
             return
-        self._statut = STATUT_RINGING
+
+        # Détermine la phase de reprise : sonnerie si on était en ringing,
+        # si H est tombée pendant le snooze (_pending_ringing), sinon aube.
+        vers_ringing = (
+            self._pending_ringing
+            or self._statut_avant_snooze == STATUT_RINGING
+        )
+        self._pending_ringing = False
+        self._statut_avant_snooze = None
         self._snooze_fin = None
+
+        if not vers_ringing:
+            # Reprise de l'aube : on remet le statut en prewake et on relance
+            # la rampe de lumière au niveau atteint avant le snooze.
+            self._statut = STATUT_PREWAKE
+            self._notify()
+            if cfg.get(CONF_LUMIERE_ACTIVEE) and cfg.get(CONF_LUMIERE):
+                self._cancel_rampes.append(
+                    self.hass.async_create_task(self._cycle_lumiere_progressive())
+                )
+            return
+
+        self._statut = STATUT_RINGING
         self._notify()
 
         # Renvoie la notification actionnable après la reprise du snooze,
@@ -2250,6 +2344,9 @@ class ReveilCoordinator(DataUpdateCoordinator):
         self._aube_faite = False
         self._aube_niveau = 0
         self._snooze_fin = None
+        self._etats_initiaux = {}
+        self._pending_ringing = False
+        self._statut_avant_snooze = None
         self._statut = STATUT_DONE
         # Réarme le déclencheur pour l'occurrence suivante : la planification
         # est à usage unique depuis le passage en point-dans-le-temps.
@@ -2387,6 +2484,9 @@ class ReveilCoordinator(DataUpdateCoordinator):
         self._aube_niveau = 0
         self._snooze_fin = None
         self._reveil_en_cours = False
+        self._etats_initiaux = {}
+        self._pending_ringing = False
+        self._statut_avant_snooze = None
         self._statut = STATUT_IDLE if self._actif else STATUT_INACTIF
         self._planifier_trigger()
         self._notify()

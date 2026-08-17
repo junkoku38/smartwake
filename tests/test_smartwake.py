@@ -3184,3 +3184,302 @@ def test_verif_nocturne_section_dans_le_menu():
     src = open("custom_components/smartwake/config_flow.py", encoding="utf-8").read()
     assert "async_step_securite" in src
     assert "securite" in src
+
+
+# ── Régression : capture des états initiaux et aube ──────────────
+#
+# La restauration de l'état au stop se basait sur l'état des appareils à H,
+# donc après l'aube : la lumière revenait allumée au lieu d'être éteinte, et
+# le volume du Sonos n'était pas restauré correctement. La capture doit se
+# faire au démarrage du pré-réveil, avant toute modification.
+#
+# En outre, le snooze doit pouvoir être déclenché pendant l'aube (prewake),
+# pas seulement pendant la sonnerie.
+
+@pytest.mark.asyncio
+async def test_etats_initiaux_captures_au_prewake(coordinator):
+    """La capture doit se faire au démarrage du prewake, avant l'aube.
+
+    Sans cela, la restauration au stop repart de l'état post-aube (lumière
+    allumée) au lieu de l'état d'origine (lumière éteinte).
+    """
+    coordinator.entry.data = {
+        **coordinator.entry.data,
+        "lumiere": "light.chambre", "lumiere_activee": True,
+        "radiateur": "climate.rad", "media_player": "media_player.sonos",
+        "musique_activee": True,
+    }
+    coordinator.hass.states.set("light.chambre", "off", {"brightness": 0})
+    coordinator.hass.states.set("climate.rad", "auto", {"preset_mode": "eco"})
+    coordinator.hass.states.set("media_player.sonos", "idle", {"volume_level": 0.05})
+
+    coordinator._statut = "prewake"
+    with patch.object(coordinator, "_envoyer_notification", AsyncMock()), \
+            patch.object(coordinator, "_cycle_lumiere_progressive", AsyncMock()):
+        await coordinator._executer_prewake()
+
+    assert "light.chambre" in coordinator._etats_initiaux, (
+        "la lumière doit être capturée au prewake"
+    )
+    assert coordinator._etats_initiaux["light.chambre"]["state"] == "off", (
+        "l'état d'origine (off) doit être mémorisé, pas l'état post-aube"
+    )
+    assert "climate.rad" in coordinator._etats_initiaux
+    assert coordinator._etats_initiaux["climate.rad"]["preset"] == "eco"
+    assert coordinator._etats_initiaux["media_player.sonos"]["volume"] == 0.05
+
+
+@pytest.mark.asyncio
+async def test_etats_initiaux_non_ecrases_a_heure_h(coordinator):
+    """_executer_cycle ne doit pas écraser la capture faite au prewake.
+
+    Si l'aube a allumé la lumière (brightness 200), _executer_cycle ne doit
+    pas re-capturer cet état post-aube : la restauration au stop utiliserait
+    sinon 200 au lieu de 0.
+    """
+    coordinator.entry.data = {
+        **coordinator.entry.data,
+        "lumiere": "light.chambre", "lumiere_activee": True,
+    }
+    coordinator.hass.states.set("light.chambre", "off", {"brightness": 0})
+
+    with patch.object(coordinator, "_envoyer_notification", AsyncMock()), \
+            patch.object(coordinator, "_cycle_lumiere_progressive", AsyncMock()):
+        await coordinator._executer_prewake()
+    assert coordinator._etats_initiaux["light.chambre"]["state"] == "off"
+
+    # L'aube a modifié la lumière entre-temps
+    coordinator.hass.states.set("light.chambre", "on", {"brightness": 200})
+    coordinator._aube_faite = True
+
+    with patch.object(coordinator, "_envoyer_notification", AsyncMock()), \
+            patch.object(coordinator, "_demarrer_musique", AsyncMock()), \
+            patch.object(coordinator, "_cycle_lumiere_progressive", AsyncMock()), \
+            patch.object(coordinator, "_ouvrir_volets", AsyncMock()), \
+            patch.object(coordinator, "_escalade", AsyncMock()), \
+            patch.object(coordinator, "_activer_scene_matin", AsyncMock()):
+        await coordinator._executer_cycle()
+
+    assert coordinator._etats_initiaux["light.chambre"]["state"] == "off", (
+        "la capture du prewake ne doit pas être écrasée par l'état post-aube"
+    )
+    assert coordinator._etats_initiaux["light.chambre"]["brightness"] == 0
+
+
+@pytest.mark.asyncio
+async def test_snooke_pendant_laube_reprend_laube(coordinator):
+    """Un snooze déclenché pendant l'aube (prewake) doit reprendre l'aube à
+    l'issue, pas la sonnerie.
+
+    Sans _statut_avant_snooze, _reprendre_apres_snooze passait toujours en
+    ringing, déclenchant musique et notification en pleine phase d'aube.
+    """
+    coordinator.entry.data = {
+        **coordinator.entry.data,
+        "lumiere": "light.chambre", "lumiere_activee": True,
+        "snooze_duree": 1, "snooze_max": 3,
+    }
+    coordinator.hass.states.set("light.chambre", "off", {"brightness": 0})
+
+    # _trigger_prewake positionne le statut puis lance _executer_prewake ;
+    # on reproduit ici la transition de statut sans le déclencheur horaire.
+    coordinator._statut = "prewake"
+    coordinator._reveil_en_cours = True
+    with patch.object(coordinator, "_envoyer_notification", AsyncMock()), \
+            patch.object(coordinator, "_cycle_lumiere_progressive", AsyncMock()):
+        await coordinator._executer_prewake()
+    assert coordinator._statut == "prewake"
+    assert coordinator._reveil_en_cours is True, "le prewake fait partie du cycle"
+
+    with patch.object(coordinator, "_reprendre_apres_snooze", AsyncMock()):
+        await coordinator.snooze()
+
+    assert coordinator._statut == "snoozed"
+    assert coordinator._statut_avant_snooze == "prewake", (
+        "le statut d'origine (prewake) doit être mémorisé pour la reprise"
+    )
+
+
+@pytest.mark.asyncio
+async def test_snooke_pendant_laube_ne_declenche_pas_la_musique(coordinator):
+    """La reprise après un snooze prewake ne doit lancer ni musique ni
+    notification : on est avant l'heure H."""
+    coordinator.entry.data = {
+        **coordinator.entry.data,
+        "lumiere": "light.chambre", "lumiere_activee": True,
+        "musique_activee": True,
+        "media_player": "media_player.sonos",
+        "snooze_duree": 1, "snooze_max": 3,
+        "notification_activee": True,
+        "notify_device": "notify.test",
+    }
+    coordinator.hass.states.set("light.chambre", "off", {"brightness": 0})
+    coordinator.hass.states.set("media_player.sonos", "idle", {"volume_level": 0.1})
+
+    appels = []
+    orig_call = coordinator.hass.services.async_call
+
+    async def _trace(domain, service, data=None, **kw):
+        appels.append((domain, service))
+        await orig_call(domain, service, data, **kw)
+
+    coordinator.hass.services.async_call = _trace
+
+    coordinator._statut_avant_snooze = "prewake"
+    coordinator._pending_ringing = False
+    coordinator._statut = "snoozed"
+    coordinator._reveil_en_cours = True
+    coordinator._snooze_fin = None
+
+    # _reprendre_apres_snooze dort snooze_duree min puis reprend. On patche
+    # _cycle_lumiere_progressive pour éviter la rampe réelle.
+    with patch.object(coordinator, "_cycle_lumiere_progressive", AsyncMock()):
+        await coordinator._reprendre_apres_snooze()
+
+    assert coordinator._statut == "prewake", "doit reprendre en prewake, pas ringing"
+    services = [(d, s) for d, s, *_ in appels]
+    assert ("media_player", "media_play") not in services, (
+        "la musique ne doit pas démarrer en pleine phase d'aube"
+    )
+
+
+@pytest.mark.asyncio
+async def test_snooke_pendant_laube_puis_heure_h_declenche_la_sonnerie(coordinator):
+    """Si l'heure H tombe pendant un snooze prewake, la reprise doit lancer
+    la sonnerie (musique + notification), pas reprendre l'aube.
+
+    _trigger_callback à H doit positionner _pending_ringing, que
+    _reprendre_apres_snooze consulte pour décider de la phase de reprise.
+    """
+    coordinator.entry.data = {
+        **coordinator.entry.data,
+        "lumiere": "light.chambre", "lumiere_activee": True,
+        "musique_activee": True,
+        "media_player": "media_player.sonos",
+        "notification_activee": True,
+        "notify_device": "notify.test",
+        "snooze_duree": 1, "snooze_max": 3,
+    }
+    coordinator.hass.states.set("light.chambre", "off", {"brightness": 0})
+    coordinator.hass.states.set("media_player.sonos", "idle", {"volume_level": 0.1})
+
+    # Snooze déclenché en pleine aube
+    coordinator._statut_avant_snooze = "prewake"
+    coordinator._statut = "snoozed"
+    coordinator._reveil_en_cours = True
+    coordinator._snooze_fin = None
+
+    # Le trigger à H tombe pendant le snooze : il doit juste signaler que la
+    # sonnerie est en attente, sans démarrer _executer_cycle.
+    from homeassistant.util import dt as dt_util
+    coordinator._cancel_trigger = None
+    coordinator._trigger_callback(dt_util.now())
+    assert coordinator._pending_ringing is True, (
+        "le trigger à H pendant un snooze doit positionner _pending_ringing"
+    )
+
+    # La reprise du snooze doit alors lancer la sonnerie
+    appels = []
+    orig_call = coordinator.hass.services.async_call
+
+    async def _trace(domain, service, data=None, **kw):
+        appels.append((domain, service))
+        await orig_call(domain, service, data, **kw)
+
+    coordinator.hass.services.async_call = _trace
+    # Le mock HA crée les tâches sur sa propre loop ; on force la loop pytest.
+    coordinator.hass.async_create_task = lambda coro: asyncio.ensure_future(coro)
+
+    with patch.object(coordinator, "_envoyer_notification", AsyncMock()) as notif, \
+            patch.object(coordinator, "_cycle_lumiere_progressive", AsyncMock()):
+        await coordinator._reprendre_apres_snooze()
+        await asyncio.sleep(0)  # laisse la tâche de reprise musique démarrer
+
+    assert coordinator._statut == "ringing"
+    assert notif.await_count == 1, "la notification doit être renvoyée à la sonnerie"
+    services = [(d, s) for d, s in appels]
+    assert ("media_player", "media_play") in services, (
+        "la musique doit démarrer à la sonnerie"
+    )
+
+
+@pytest.mark.asyncio
+async def test_notification_actionnable_envoyee_des_le_prewake(coordinator):
+    """La notification actionnable (boutons Snooze/Stop) doit partir au
+    démarrage du prewake, pas à H, pour être disponible pendant l'aube."""
+    coordinator.entry.data = {
+        **coordinator.entry.data,
+        "lumiere": "light.chambre", "lumiere_activee": True,
+        "notification_activee": True,
+        "notify_device": "notify.test",
+        "radiateur": None,
+        "chauffe_eau": None,
+        "cafetiere": None,
+    }
+    coordinator.hass.states.set("light.chambre", "off", {"brightness": 0})
+
+    with patch.object(coordinator, "_envoyer_notification", AsyncMock()) as notif, \
+            patch.object(coordinator, "_cycle_lumiere_progressive", AsyncMock()):
+        await coordinator._executer_prewake()
+
+    assert notif.await_count == 1, (
+        "la notification actionnable doit partir dès le prewake"
+    )
+
+
+@pytest.mark.asyncio
+async def test_stop_pendant_le_prewake_retaure_l_etat_origine(coordinator):
+    """Stop pendant l'aube doit restaurer la lumière à son état d'origine
+    (off), pas à l'état post-aube (on, brightness haute)."""
+    coordinator.entry.data = {
+        **coordinator.entry.data,
+        "lumiere": "light.chambre", "lumiere_activee": True,
+    }
+    coordinator.hass.states.set("light.chambre", "off", {"brightness": 0})
+
+    coordinator._statut = "prewake"
+    coordinator._reveil_en_cours = True
+    with patch.object(coordinator, "_envoyer_notification", AsyncMock()), \
+            patch.object(coordinator, "_cycle_lumiere_progressive", AsyncMock()):
+        await coordinator._executer_prewake()
+    # L'aube a allumé la lumière
+    coordinator.hass.states.set("light.chambre", "on", {"brightness": 200})
+
+    appels = []
+    orig_call = coordinator.hass.services.async_call
+
+    async def _trace(domain, service, data=None, **kw):
+        appels.append((domain, service, data))
+        await orig_call(domain, service, data, **kw)
+
+    coordinator.hass.services.async_call = _trace
+
+    await coordinator.stop()
+
+    # La restauration doit éteindre la lumière (état d'origine = off)
+    light_calls = [(d, s, data) for d, s, data in appels if d == "light"]
+    actions = [(s, (data or {}).get("entity_id")) for _, s, data in light_calls]
+    # Au moins un light.turn_off sur light.chambre
+    assert any(s == "turn_off" and e == "light.chambre" for s, e in actions), (
+        "la lumière doit être éteinte au stop (état d'origine = off), "
+        f"appels light: {light_calls}"
+    )
+    assert coordinator._etats_initiaux == {}, (
+        "les états initiaux doivent être nettoyés au stop"
+    )
+
+
+@pytest.mark.asyncio
+async def test_reset_nettoie_les_etats_initiaux(coordinator):
+    """reset() doit nettoyer _etats_initiaux, _pending_ringing et
+    _statut_avant_snooze pour ne pas restaurer un état obsolète au prochain
+    cycle."""
+    coordinator._etats_initiaux = {"light.x": {"state": "on"}}
+    coordinator._pending_ringing = True
+    coordinator._statut_avant_snooze = "ringing"
+
+    await coordinator.reset()
+
+    assert coordinator._etats_initiaux == {}
+    assert coordinator._pending_ringing is False
+    assert coordinator._statut_avant_snooze is None
