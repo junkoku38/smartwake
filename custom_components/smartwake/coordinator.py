@@ -1105,6 +1105,12 @@ class ReveilCoordinator(DataUpdateCoordinator):
             state = self.hass.states.get(calendar)
             if state is None:
                 return None
+            # Ignorer les événements d'une journée entière (anniversaires,
+            # jours fériés, congés) : leur start_time est à minuit et n'est
+            # pas un rendez-vous horaire. Avancer le réveil à 20h45 la veille
+            # d'un anniversaire n'a aucun sens.
+            if state.attributes.get("all_day", False):
+                return None
             start = state.attributes.get("start_time")
             if not start:
                 return None
