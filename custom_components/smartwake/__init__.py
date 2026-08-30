@@ -133,6 +133,16 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
             if coord:
                 await coord.set_config_value(CONF_JOURS_PERSO, list(jours))
 
+    # Le handler existait mais n'était jamais enregistré : la carte
+    # échouait silencieusement à chaque clic sur un jour personnalisé.
+    hass.services.async_register(
+        DOMAIN, SERVICE_SET_JOURS_PERSO, _handle_set_jours_perso,
+        schema=vol.Schema({
+            vol.Required(ATTR_ENTITY_ID): vol.All(cv.ensure_list, [str]),
+            vol.Required("jours"): vol.All(cv.ensure_list, [str]),
+        }),
+    )
+
     hass.services.async_register(
         DOMAIN, SERVICE_TESTER_IA, _handle_tester_ia,
         schema=vol.Schema({

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 
+from typing import Any
+
 from homeassistant.components.select import SelectEntity, SelectEntityDescription
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -83,6 +85,16 @@ class ReveilSelect(SelectEntity):
     @property
     def current_option(self) -> str | None:
         return self.coordinator.config.get(CONF_JOURS, "semaine")
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Jours personnalisés, pour les cartes et automatisations.
+
+        La carte dashboard lit cet attribut pour basculer un jour sans
+        passer par le menu d'options : sans lui, elle lisait un attribut
+        inexistant et envoyait une liste vide — effaçant la sélection.
+        """
+        return {"jours_perso": self.coordinator.config.get(CONF_JOURS_PERSO, [])}
 
     async def async_select_option(self, option: str) -> None:
         if option not in JOURS_OPTIONS:

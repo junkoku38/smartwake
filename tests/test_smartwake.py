@@ -3484,3 +3484,54 @@ async def test_reset_nettoie_les_etats_initiaux(coordinator):
     assert coordinator._etats_initiaux == {}
     assert coordinator._pending_ringing is False
     assert coordinator._statut_avant_snooze is None
+
+
+@pytest.mark.asyncio
+async def test_chauffe_eau_capture_puis_restauré_au_stop(coordinator):
+    """Le chauffe-eau allumé pendant le pré-réveil doit être éteint au stop
+    si son état d'origine était « off » (bug : il restait allumé sans fin)."""
+    coordinator.entry.data = {
+        **coordinator.entry.data,
+        "chauffe_eau": "switch.chauffe_eau",
+        "radiateur": None, "media_player": None, "lumiere": None,
+        "musique_activee": False, "lumiere_activee": False,
+        "notification_activee": False,
+    }
+    coordinator.hass.states.set("switch.chauffe_eau", "off")
+
+    coordinator._capturer_etats_initiaux()
+    assert "switch.chauffe_eau" in coordinator._etats_initiaux, (
+        "le chauffe-eau doit être capturé avant d'être allumé"
+    )
+
+    appels = []
+    orig_call = coordinator.hass.services.async_call
+
+    async def _trace(domain, service, data=None, **kw):
+        appels.append((domain, service, data))
+        await orig_call(domain, service, data, **kw)
+
+    coordinator.hass.services.async_call = _trace
+    coordinator._statut = "prewake"
+    coordinator._reveil_en_cours = True
+
+    await coordinator.stop()
+
+    actions = [(d, s, (data or {}).get("entity_id")) for d, s, data in appels
+               if d == "switch"]
+    assert ("switch", "turn_off", "switch.chauffe_eau") in actions, (
+        "le chauffe-eau doit être éteint au stop (état d'origine = off), "
+        f"appels switch : {actions}"
+    )
+
+
+def test_service_set_jours_perso_enregistré():
+    """Le handler existait mais le service n'était jamais enregistré : la
+    carte ne pouvait pas basculer les jours personnalisés (bug silencieux)."""
+    src = Path(
+        __file__).parent.parent / "custom_components" / "smartwake" / "__init__.py"
+    contenu = src.read_text(encoding="utf-8")
+    assert "async_register(\n        DOMAIN, SERVICE_SET_JOURS_PERSO" in contenu or \
+           "async_register(DOMAIN, SERVICE_SET_JOURS_PERSO" in contenu, (
+        "le service smartwake.set_jours_perso doit être enregistré"
+    )

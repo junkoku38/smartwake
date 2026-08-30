@@ -413,15 +413,27 @@ class ReveilCoordinator(DataUpdateCoordinator):
                 self._prochain,
             )
 
-        # Détecter si HA a redémarré pendant la nuit (entre 22h et 8h)
+        # Détecter si HA a redémarré pendant la nuit (entre 22h et 8h).
+        # Un redémarrage à 23h n'est une anomalie que si un réveil devait
+        # sonner avant 8h : sinon c'est une maintenance ordinaire et
+        # l'alerte systématique ne faisait que du bruit.
         now = dt_util.now()
         if now.hour >= 22 or now.hour < 8:
-            _LOGGER.warning(
-                "Anomalie: HA a redémarré à %s (période nocturne) — vérifier que '%s' est armé",
-                now.strftime("%H:%M"),
-                self.entry.title,
+            _LOGGER.info(
+                "Home Assistant a redémarré à %s (période nocturne) — "
+                "vérification du rattrapage pour '%s'",
+                now.strftime("%H:%M"), self.entry.title,
             )
-            anomalies.append("redemarrage_nocturne")
+            if self._actif and self._prochain is not None:
+                dans = (self._prochain - now).total_seconds() / 3600
+                if 0 <= dans <= (8 if now.hour >= 22 else 8 - now.hour):
+                    _LOGGER.warning(
+                        "Anomalie: HA a redémarré à %s alors que '%s' doit "
+                        "sonner à %s — vérifier l'armement",
+                        now.strftime("%H:%M"), self.entry.title,
+                        self._prochain.strftime("%H:%M"),
+                    )
+                    anomalies.append("redemarrage_nocturne")
 
         if anomalies:
             self._fire_event("smartwake_anomalie", type=anomalies)
@@ -800,6 +812,28 @@ class ReveilCoordinator(DataUpdateCoordinator):
                 )
             except Exception as exc:
                 _LOGGER.error("Erreur extinction: %s", exc)
+        # Chauffe-eau et cafetière : même traitement que stop() — les
+        # restaurer à leur état d'origine, pas seulement éteindre la
+        # musique. Un interrupteur coupé pendant la sonnerie laissait
+        # avant le sèche-serviettes allumé toute la journée.
+        if hasattr(self, "_etats_initiaux") and self._etats_initiaux:
+            for entity_id, etat in self._etats_initiaux.items():
+                domaine = entity_id.split(".")[0]
+                if domaine != "switch":
+                    continue
+                try:
+                    if etat.get("state") == "on":
+                        await self.hass.services.async_call(
+                            "switch", "turn_on",
+                            {"entity_id": entity_id}, blocking=True,
+                        )
+                    else:
+                        await self.hass.services.async_call(
+                            "switch", "turn_off",
+                            {"entity_id": entity_id}, blocking=True,
+                        )
+                except Exception as exc:
+                    _LOGGER.error("Erreur restauration %s: %s", entity_id, exc)
 
     def _nettoyer_triggers(self) -> None:
         if self._cancel_trigger:
@@ -1298,6 +1332,24 @@ class ReveilCoordinator(DataUpdateCoordinator):
                     "preset": etat.attributes.get("preset_mode"),
                     "state": etat.state,
                 }
+        # Chauffe-eau / sèche-serviettes : il est allumé pendant le
+        # pré-réveil ; sans capture, il restait allumé indéfiniment après
+        # le stop — personne ne l'éteignait jamais.
+        if cfg.get(CONF_CHAUFFE_EAU):
+            etat = self.hass.states.get(cfg[CONF_CHAUFFE_EAU])
+            if etat:
+                self._etats_initiaux[cfg[CONF_CHAUFFE_EAU]] = {
+                    "state": etat.state,
+                }
+        # Cafetière : idem — si le stop arrive avant la fin du délai, la
+        # tâche est annulée, mais si le café est déjà parti, son état
+        # d'origine doit être restaurable.
+        if cfg.get(CONF_CAFETIERE):
+            etat = self.hass.states.get(cfg[CONF_CAFETIERE])
+            if etat:
+                self._etats_initiaux[cfg[CONF_CAFETIERE]] = {
+                    "state": etat.state,
+                }
 
     async def _executer_prewake(self) -> None:
         """Pré-chauffage, simulation d'aube, café, chauffe-eau."""
@@ -1714,19 +1766,27 @@ class ReveilCoordinator(DataUpdateCoordinator):
                 _LOGGER.error("Erreur scène matin %s: %s", entity, exc)
 
     async def _escalade_intelligente(self) -> None:
-        """Escalade progressive : 3 niveaux (doux → moyen → max)."""
-        # Niveau 1 (5 min) : volume 60%
-        await asyncio.sleep(5 * 60)
+        """Escalade progressive : 3 niveaux (doux → moyen → max).
+
+        Les paliers étaient figés à 5/10/15 min quel que soit le réglage
+        « Escalade (min) » : régler 20 min donnait toujours 5/10/15. Le
+        réglage pilote désormais le premier palier, les suivants le
+        doublent puis le triplent (20 min → 20/40/60).
+        """
+        cfg = self.entry.data
+        palier = max(1, int(cfg.get(CONF_ESCALADE_MIN, DEFAULT_ESCALADE_MIN)))
+        # Niveau 1 : volume 60%
+        await asyncio.sleep(palier * 60)
         if not self._escalade_pertinente():
             return
         await self._escalade_niveau(0.6, 60, "doux")
-        # Niveau 2 (10 min) : volume 80%
-        await asyncio.sleep(5 * 60)
+        # Niveau 2 : volume 80%
+        await asyncio.sleep(palier * 60)
         if not self._escalade_pertinente():
             return
         await self._escalade_niveau(0.8, 80, "moyen")
-        # Niveau 3 (15 min) : volume 100% + toutes lumières
-        await asyncio.sleep(5 * 60)
+        # Niveau 3 : volume 100% + toutes lumières
+        await asyncio.sleep(palier * 60)
         if not self._escalade_pertinente():
             return
         await self._escalade_niveau(1.0, 100, "max")
@@ -2271,6 +2331,21 @@ class ReveilCoordinator(DataUpdateCoordinator):
                                  "preset_mode": etat["preset"]},
                                 blocking=True,
                             )
+                    elif domaine == "switch":
+                        # Chauffe-eau, cafetière : allumés pendant le cycle,
+                        # ils doivent revenir à leur état d'origine au stop.
+                        # Un chauffe-eau resté « on » après le réveil tournait
+                        # jusqu'à la prochaine intervention manuelle.
+                        if etat.get("state") == "on":
+                            await self.hass.services.async_call(
+                                "switch", "turn_on",
+                                {"entity_id": entity_id}, blocking=True,
+                            )
+                        else:
+                            await self.hass.services.async_call(
+                                "switch", "turn_off",
+                                {"entity_id": entity_id}, blocking=True,
+                            )
                 except Exception as exc:
                     _LOGGER.error("Erreur restauration %s: %s", entity_id, exc)
         else:
@@ -2585,7 +2660,13 @@ class ReveilCoordinator(DataUpdateCoordinator):
         return str(res)
 
     async def declencher_manuel(self) -> None:
-        """Déclenche manuellement le cycle de réveil."""
+        """Déclenche manuellement le cycle de réveil.
+
+        Les conditions du jour (présence, férié…) sont volontairement
+        ignorées : l'utilisateur l'a demandé explicitement. La capture
+        d'états initiaux et l'escalade sont gérées dans _executer_cycle,
+        comme pour un déclenchement planifié.
+        """
         if self._reveil_en_cours:
             return
         self._cancel_cycle = self.hass.async_create_task(self._executer_cycle())

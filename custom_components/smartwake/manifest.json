@@ -1,7 +1,9 @@
 {
   "domain": "smartwake",
   "name": "SmartWAKE",
-  "after_dependencies": ["recorder"],
+  "after_dependencies": [
+    "recorder"
+  ],
   "codeowners": [
     "@junkoku38"
   ],
@@ -14,5 +16,5 @@
     "custom_components.smartwake"
   ],
   "requirements": [],
-  "version": "2.31.2"
+  "version": "2.31.3"
 }
