@@ -20,6 +20,7 @@ from .const import (
     CONF_AI_BILAN_HEBDO,
     CONF_SOMMEIL_SENSORS,
     CONF_AI_SUGGESTION_HEURE_PLANIF,
+    CONF_HEURE_DODO,
     CONF_AI_BILAN_JOUR,
     CONF_AI_BILAN_HEURE_PLANIF,
     CONF_VERIF_NOCTURNE,
@@ -27,6 +28,7 @@ from .const import (
     CONF_VERIF_NOCTURNE_ENTITIES,
     CONF_VERIF_NOCTURNE_MESSAGE,
     DEFAULT_VERIF_NOCTURNE_HEURE,
+    DEFAULT_HEURE_DODO,
     DEFAULT_VERIF_NOCTURNE_MESSAGE,
     CONF_AI_BRIEFING_SI_TRAVAIL,
     CONF_ADAPTATIF_AGENDA,
@@ -730,6 +732,7 @@ class SmartWAKEOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional(CONF_AI_MUSIQUE_ADAPT, default=data.get(CONF_AI_MUSIQUE_ADAPT, False)): bool,
                 vol.Optional(CONF_AI_SUGGESTION_HEURE, default=data.get(CONF_AI_SUGGESTION_HEURE, False)): bool,
                 vol.Optional(CONF_AI_SUGGESTION_HEURE_PLANIF, default=data.get(CONF_AI_SUGGESTION_HEURE_PLANIF, DEFAULT_AI_SUGGESTION_HEURE)): selector.TimeSelector(),
+                vol.Optional(CONF_HEURE_DODO, default=data.get(CONF_HEURE_DODO, DEFAULT_HEURE_DODO)): selector.TimeSelector(),
                 vol.Optional(CONF_AI_BILAN_HEBDO, default=data.get(CONF_AI_BILAN_HEBDO, False)): bool,
                 vol.Optional(CONF_AI_BILAN_JOUR, default=data.get(CONF_AI_BILAN_JOUR, DEFAULT_AI_BILAN_JOUR)): selector.SelectSelector(
                     selector.SelectSelectorConfig(

@@ -67,9 +67,16 @@ class LearningManager:
         return ecart
 
     async def record_lever(self, heure_programmee: str, heure_reelle: datetime, snoozes: int) -> None:
-        """Enregistre un lever réel."""
+        """Enregistre un lever réel.
+
+        Le jour de la semaine est mémorisé : en mode « heure par jour »,
+        l'écart du mardi ne doit pas polluer la statistique du samedi —
+        les heures programmées diffèrent, comparer tout ensemble mélange
+        des choux et des carottes.
+        """
         self._data.setdefault("levers", []).append({
             "date": heure_reelle.date().isoformat(),
+            "jour_semaine": heure_reelle.weekday(),
             "heure_programmee": heure_programmee,
             "heure_reelle": heure_reelle.isoformat(),
             "ecart_min": self._ecart_minutes(heure_programmee, heure_reelle),
@@ -83,10 +90,21 @@ class LearningManager:
                 self._data[key] = self._data[key][-90:]
         await self.async_save()
 
-    def get_stats(self) -> dict[str, Any]:
-        """Retourne les statistiques d'apprentissage."""
+    _JOURS = ("lundi", "mardi", "mercredi", "jeudi",
+              "vendredi", "samedi", "dimanche")
+
+    def get_stats(self, jour: int | None = None) -> dict[str, Any]:
+        """Statistiques d'apprentissage, globales ou pour un jour donné.
+
+        `jour` : numéro du jour (0=lundi). En mode « heure par jour »,
+        l'écart global mélange des heures programmées différentes ; le
+        bilan et la suggestion doivent raisonner sur le jour visé.
+        """
         levers = self._data.get("levers", [])
         snoozes = self._data.get("snoozes", [])
+        if jour is not None:
+            levers = [l for l in levers if l.get("jour_semaine", -1) == jour]
+            snoozes = [l["snoozes"] for l in levers]
 
         if len(levers) < 3:
             return {"disponible": False, "message": "Pas assez de données (minimum 3 levers)"}
@@ -105,6 +123,19 @@ class LearningManager:
             "regulier": ecart_type < 15,
             "suggestion": self._generate_suggestion(ecart_moyen, ecart_type, snooze_moyen),
         }
+
+    def get_stats_par_jour(self) -> dict[int, dict[str, Any]]:
+        """Statistiques par jour de la semaine, pour le bilan hebdo.
+
+        Ne retourne que les jours disposant d'au moins trois levers —
+        en dessous, une moyenne ne veut rien dire.
+        """
+        resultat: dict[int, dict[str, Any]] = {}
+        for jour in range(7):
+            stats = self.get_stats(jour)
+            if stats.get("disponible"):
+                resultat[jour] = stats
+        return resultat
 
     def _generate_suggestion(self, ecart_moyen: float, ecart_type: float, snooze_moyen: float) -> str:
         """Génère une suggestion d'ajustement."""

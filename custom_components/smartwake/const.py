@@ -222,6 +222,10 @@ DEFAULT_AUBE_MIN = 20
 DEFAULT_NOTIF_TITRE = "⏰ Réveil"
 DEFAULT_NOTIF_MESSAGE = "Il est l'heure de se lever !"
 DEFAULT_TTS_MESSAGE = "Bonjour. Bonne journée !"
+# Heure de coucher : au-delà, plus aucun briefing, bilan ou suggestion IA —
+# une notification vocale ou lumineuse mal timée réveille toute la maison.
+CONF_HEURE_DODO = "heure_dodo"
+DEFAULT_HEURE_DODO = "22:00"
 DEFAULT_AGENDA_MARGE_MIN = 90
 DEFAULT_AI_BRIEFING = False
 DEFAULT_AI_MUSIQUE_ADAPT = False

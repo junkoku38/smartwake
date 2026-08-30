@@ -254,7 +254,8 @@
           "ai_briefing_si_travail": "Briefing uniquement les jours travaillés",
           "ai_suggestion_heure_planif": "Heure de la suggestion du soir",
           "ai_bilan_jour": "Jour du bilan hebdomadaire",
-          "ai_bilan_heure_planif": "Heure du bilan hebdomadaire"
+          "ai_bilan_heure_planif": "Heure du bilan hebdomadaire",
+          "heure_dodo": "Ne pas déranger à partir de (heure de coucher)"
         },
         "data_description": {
           "ai_briefing": "**Recommandé** — Au moment du Stop, l'IA rédige un briefing naturel (météo, premier RDV de l'agenda, temps de trajet, batterie du téléphone) et le lit via TTS. Cochez + sélectionnez l'entité AI Task ci-dessous.\n\n**Prompt utilisé :** « Tu es un assistant matinal. Rédige un briefing parlé de 30 secondes max, en français, ton chaleureux, sans listes ni emojis. Mentionne un conseil pertinent (parapluie, partir plus tôt si trafic, charger le téléphone si <30%). Termine par une phrase motivante courte. »",
@@ -272,7 +273,8 @@
           "ai_custom_entities": "Sélectionnez les entités dont les valeurs doivent être incluses dans le contexte de votre prompt. Ex : sensor.co2_chambre, sensor.qualite_air, weather.home.",
           "sommeil_sensors": "Capteurs à transmettre au bilan hebdomadaire : score de sommeil, durées de sommeil profond/léger/paradoxal, réveils nocturnes, endormissement, ronflement… Compatible Withings, Fitbit, Oura ou tout autre capteur. Les moyennes sur 7 jours sont calculées automatiquement.",
           "ai_briefing_si_travail": "Utilise le capteur de jours travaillés configuré dans la section Intelligence.",
-          "ai_bilan_jour": "Le bilan portait uniquement sur un appel manuel du service smartwake.bilan_hebdo ; il est désormais planifié."
+          "ai_bilan_jour": "Le bilan portait uniquement sur un appel manuel du service smartwake.bilan_hebdo ; il est désormais planifié.",
+          "heure_dodo": "Après cette heure, plus aucune suggestion, briefing ou tâche IA du soir ne part : la maisonnée est couchée."
         }
       },
       "test_ia": {

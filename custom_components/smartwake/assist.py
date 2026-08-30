@@ -193,6 +193,56 @@ class SmartWAKEStatusTool(_ReveilTool):
         return self._etat(coord)
 
 
+class SmartWAKEEtaTool(_ReveilTool):
+    """Temps restant avant le prochain réveil."""
+
+    name = "smartwake_eta"
+    description = (
+        "Donne le temps restant avant le prochain réveil, en minutes et en "
+        "heures lisibles (« dans 8 h 30 »). Sans nom, prend le réveil le "
+        "plus proche. Répond aussi « aucun réveil planifié » si rien "
+        "n'est armé."
+    )
+    parameters = vol.Schema({vol.Optional("name"): str})
+
+    async def async_call(
+        self, hass: HomeAssistant, tool_input: llm.ToolInput, llm_context: llm.LLMContext
+    ) -> JsonObjectType:
+        from datetime import datetime, timedelta, timezone
+
+        args = tool_input.tool_args
+        name = args.get("name")
+        coords = _reveils(hass)
+        if name:
+            coord = self._coord(hass, args)
+            if coord is None:
+                return _erreur_introuvable(hass, name)
+            coords = [coord]
+        if not coords:
+            return {"erreur": "Aucun réveil SmartWAKE configuré"}
+
+        maintenant = datetime.now(timezone.utc)
+        armes = [c for c in coords if c.prochain_reveil]
+        if not armes:
+            return {"message": "Aucun réveil planifié"}
+
+        coord = min(armes, key=lambda c: c.prochain_reveil)
+        reste = coord.prochain_reveil - maintenant
+        minutes = round(reste.total_seconds() / 60)
+        heures = int(minutes // 60)
+        mins = int(minutes % 60)
+        if heures > 0:
+            lisible = f"{heures} h {mins:02d}"
+        else:
+            lisible = f"{mins} min"
+        return {
+            "name": coord.entry.title,
+            "prochain": coord.prochain_reveil.isoformat(),
+            "minutes_restantes": minutes,
+            "message": f"Dans {lisible}",
+        }
+
+
 class SmartWAKEAPI(llm.API):
     """Expose les outils SmartWAKE aux agents conversationnels."""
 
@@ -211,6 +261,7 @@ class SmartWAKEAPI(llm.API):
                 SmartWAKEActivateTool(),
                 SmartWAKESkipTool(),
                 SmartWAKEStatusTool(),
+                SmartWAKEEtaTool(),
             ],
         )
 
@@ -225,4 +276,4 @@ async def async_setup_assist_tools(hass: HomeAssistant) -> None:
     if any(api.id == API_ID for api in llm.async_get_apis(hass)):
         return
     llm.async_register_api(hass, SmartWAKEAPI(hass))
-    _LOGGER.info("API Assist SmartWAKE enregistrée (4 outils)")
+    _LOGGER.info("API Assist SmartWAKE enregistrée (5 outils)")

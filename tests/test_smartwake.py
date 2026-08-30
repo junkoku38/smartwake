@@ -3535,3 +3535,97 @@ def test_service_set_jours_perso_enregistré():
            "async_register(DOMAIN, SERVICE_SET_JOURS_PERSO" in contenu, (
         "le service smartwake.set_jours_perso doit être enregistré"
     )
+
+
+@pytest.mark.asyncio
+async def test_suggestion_ia_nuit_pas_de_notification(coordinator):
+    """Période « ne pas déranger » : aucune suggestion IA ne part une fois
+    l'heure de coucher passée — notifier à 23h réveille la maison."""
+    coordinator.entry.data = {
+        **coordinator.entry.data,
+        "heure_dodo": "21:00",
+        "ai_suggestion_heure": True,
+        "ai_custom_tasks": [],
+    }
+    coordinator._actif = True
+    with patch.object(coordinator, "_run_ai_suggestion", AsyncMock()) as run, \
+            patch.object(coordinator, "_run_custom_ai", AsyncMock()) as custom:
+        coordinator._ai_suggestion_callback(None)
+        await asyncio.sleep(0)
+    run.assert_not_called()
+    custom.assert_not_called()
+
+
+def test_learning_stats_par_jour():
+    """Les stats par jour séparent mardi et samedi : en mode par_jour,
+    l'écart global mélange des heures programmées différentes."""
+    from custom_components.smartwake.learning import LearningManager
+    mgr = LearningManager.__new__(LearningManager)
+    mgr._data = {"levers": [], "snoozes": [], "heures_programmees": []}
+    # 3 levers du mardi (07:00), 3 du samedi (09:00), écarts différents
+    levers = []
+    for ecart in (10, 20, 30):
+        levers.append({"date": "2026-08-25", "jour_semaine": 1,
+                       "heure_programmee": "07:00",
+                       "heure_reelle": f"2026-08-25T07:{ecart:02d}:00",
+                       "ecart_min": ecart, "snoozes": 0})
+    for ecart in (-30, -20, -10):
+        levers.append({"date": "2026-08-29", "jour_semaine": 5,
+                       "heure_programmee": "09:00",
+                       "heure_reelle": f"2026-08-29T08:{60+ecart:02d}:00",
+                       "ecart_min": ecart, "snoozes": 1})
+    mgr._data["levers"] = levers
+
+    mardi = mgr.get_stats(1)
+    samedi = mgr.get_stats(5)
+    assert mardi["disponible"] and mardi["ecart_moyen_min"] == 20
+    assert samedi["disponible"] and samedi["ecart_moyen_min"] == -20
+    par_jour = mgr.get_stats_par_jour()
+    assert set(par_jour.keys()) == {1, 5}
+
+
+@pytest.mark.asyncio
+async def test_set_heure_par_jour_vise_demain(coordinator):
+    """Une suggestion IA acceptée mardi soir à 22h doit écrire l'heure de
+    mercredi, pas celle du mardi déjà révolu."""
+    from unittest.mock import patch as _patch
+    coordinator.entry.data = {**coordinator.entry.data,
+                               "mode_heure": "par_jour"}
+    appels = []
+
+    async def _trace(domain, service, data=None, **kw):
+        appels.append((domain, service, data))
+
+    coordinator.hass.services.async_call = _trace
+    # mardi 22h -> demain = mercredi
+    avec_demain = patch(
+        "custom_components.smartwake.coordinator.dt_util.now",
+        return_value=datetime(2026, 9, 1, 22, 0),
+    )
+    with avec_demain:
+        await coordinator.set_heure("06:45")
+    entity_ids = [d.get("entity_id") for _, _, d in appels
+                  if d and "time" in str(d)]
+    assert any("mercredi" in str(e) for e in entity_ids), (
+        f"l'heure doit viser le jour de demain (mercredi), appels : {appels}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_healthcheck_previent_avant_le_cycle(coordinator):
+    """Un media_player unavailable au pré-réveil doit déclencher une
+    notification immédiate, pas un échec silencieux à l'heure H."""
+    coordinator.entry.data = {
+        **coordinator.entry.data,
+        "musique_activee": True, "media_player": "media_player.morte",
+        "lumiere_activee": False, "notification_activee": True,
+        "notify_device": "notify.mobile_app_test",
+        "radiateur": None, "chauffe_eau": None, "cafetiere": None,
+    }
+    coordinator.hass.states.set("media_player.morte", "unavailable")
+    notifie = []
+    with patch.object(coordinator, "_notifier",
+                      AsyncMock(side_effect=lambda *a, **k: notifie.append(a))):
+        await coordinator._healthcheck_appareils(coordinator.entry.data)
+    assert notifie, "une notification d'avertissement doit partir"
+    assert "media_player.morte" in str(notifie[0])

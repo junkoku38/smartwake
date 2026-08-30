@@ -37,6 +37,8 @@ from .const import (
     CONF_ESCALADE_INTELLIGENTE,
     CONF_ESCALADE_MIN,
     CONF_HEURE,
+    CONF_HEURE_DODO,
+    DEFAULT_HEURE_DODO,
     CONF_HEURE_LUNDI,
     CONF_HEURE_MARDI,
     CONF_HEURE_MERCREDI,
@@ -630,6 +632,15 @@ class ReveilCoordinator(DataUpdateCoordinator):
         """Callback du soir — suggestion d'heure et tâches IA « on_evening »."""
         if not self._actif:
             return
+        # Période « ne pas déranger » : une fois la maisonnée couchée, aucune
+        # suggestion ni tâche IA du soir ne part — les notifications à 23h
+        # réveillent tout le monde.
+        if self._periode_dodo():
+            _LOGGER.debug(
+                "Tâches IA du soir annulées pour '%s' — période de sommeil",
+                self.entry.title,
+            )
+            return
         cfg = self.entry.data
         if cfg.get(CONF_AI_SUGGESTION_HEURE):
             self.hass.async_create_task(self._run_ai_suggestion())
@@ -881,13 +892,18 @@ class ReveilCoordinator(DataUpdateCoordinator):
         planification. Une suggestion IA acceptée via notification écrivait
         seulement CONF_HEURE, qui était ensuite ignorée par
         _calculer_prochain en mode par_jour — l'heure suggérée était perdue.
-        On écrit aussi dans l'entité du jour courant si le mode est par_jour.
+        On écrit aussi dans l'entité du jour visé.
+
+        Le jour visé est « demain » pour une suggestion IA : la suggestion du
+        soir porte sur le lendemain, et c'est justement quand l'utilisateur
+        l'accepte (souvent après l'heure de coucher) que la date vient de
+        basculer. Écrire le jour courant corrompait le réveil du jour même.
         """
         self._ecrire_config(**{CONF_HEURE: heure})
         cfg = self.entry.data
         if cfg.get(CONF_MODE_HEURE, "unique") == "par_jour":
-            jour_courant = JOURS_LIST[dt_util.now().weekday()]
-            entity_id = f"time.{self.entity_id_prefix}_heure_{jour_courant}"
+            jour_vise = JOURS_LIST[(dt_util.now() + timedelta(days=1)).weekday()]
+            entity_id = f"time.{self.entity_id_prefix}_heure_{jour_vise}"
             try:
                 await self.hass.services.async_call(
                     "time", "set_value",
@@ -895,14 +911,14 @@ class ReveilCoordinator(DataUpdateCoordinator):
                     blocking=True,
                 )
                 _LOGGER.info(
-                    "Heure %s appliquée à %s (mode par_jour, jour courant)",
+                    "Heure %s appliquée à %s (mode par_jour, jour visé demain)",
                     heure, entity_id,
                 )
             except Exception as exc:
                 _LOGGER.warning(
                     "Impossible d'appliquer l'heure à %s: %s. "
                     "L'heure de référence a été mise à jour mais le jour "
-                    "courant n'a pas été modifié.", entity_id, exc,
+                    "visé n'a pas été modifié.", entity_id, exc,
                 )
         if self._actif:
             self._planifier_trigger()
@@ -1122,6 +1138,65 @@ class ReveilCoordinator(DataUpdateCoordinator):
             return False
         state = self.hass.states.get(entite)
         return state is not None and state.state == "on"
+
+    async def _healthcheck_appareils(self, cfg: dict[str, Any]) -> None:
+        """Vérifie que les appareils du cycle répondent, prévient sinon.
+
+        Un media_player ou un radiateur « unavailable » à H−30 est
+        rattrapable : l'utilisateur peut le rallumer ou brancher une
+        sonnerie de secours. À H, c'est un réveil raté en silence. La
+        vérification ne bloque pas le cycle : un appareil absent n'empêche
+        pas les autres de jouer.
+        """
+        appareils: list[tuple[str, str]] = []
+        if cfg.get(CONF_MUSIQUE_ACTIVEE) and cfg.get(CONF_MEDIA_PLAYER):
+            appareils.append(("la sonnerie musicale", cfg[CONF_MEDIA_PLAYER]))
+        if cfg.get(CONF_LUMIERE_ACTIVEE) and cfg.get(CONF_LUMIERE):
+            appareils.append(("l'aube lumineuse", cfg[CONF_LUMIERE]))
+        if cfg.get(CONF_RADIATEUR):
+            appareils.append(("le radiateur", cfg[CONF_RADIATEUR]))
+        if cfg.get(CONF_CHAUFFE_EAU):
+            appareils.append(("le chauffe-eau", cfg[CONF_CHAUFFE_EAU]))
+
+        muets = [
+            (nom, eid) for nom, eid in appareils
+            if not (etat := self.hass.states.get(eid))
+            or etat.state in ("unavailable", "unknown")
+        ]
+        if not muets:
+            return
+
+        details = ", ".join(f"{nom} ({eid})" for nom, eid in muets)
+        _LOGGER.warning(
+            "Health-check '%s' avant le réveil : %s ne répond(ent) pas — "
+            "le cycle démarre quand même sur les autres",
+            self.entry.title, details,
+        )
+        self._log_event(f"Appareils injoignables : {details}")
+        notify = cfg.get(CONF_NOTIFY_DEVICE)
+        if notify:
+            try:
+                await self._notifier(
+                    notify, "⚠️ SmartWAKE",
+                    "Avant le réveil, ces appareils ne répondent pas : "
+                    + details
+                    + ". Le réveil démarrera sans eux.",
+                )
+            except Exception as exc:
+                _LOGGER.debug("Notification health-check impossible: %s", exc)
+
+    def _periode_dodo(self) -> bool:
+        """Vrai entre l'heure de coucher et minuit.
+
+        Les suggestions et briefings IA ne doivent pas partir une fois que
+        la maisonnée est couchée : une notification sonore ou lumineuse à
+        23h réveille tout le monde, y compris les enfants.
+        """
+        heure = _parse_heure(
+            self.entry.data.get(CONF_HEURE_DODO, DEFAULT_HEURE_DODO)
+        )
+        now = dt_util.now()
+        return now.hour * 60 + now.minute >= heure.hour * 60 + heure.minute
 
     def _instant_adaptatif_agenda(self, candidate: datetime) -> datetime | None:
         """Avance le réveil selon le premier rendez-vous du jour visé.
@@ -1355,6 +1430,12 @@ class ReveilCoordinator(DataUpdateCoordinator):
         """Pré-chauffage, simulation d'aube, café, chauffe-eau."""
         cfg = self.entry.data
         _LOGGER.info("Pré-réveil démarré pour '%s'", self.entry.title)
+
+        # Health-check : les appareils pilotes du cycle doivent répondre
+        # AVANT qu'il soit trop tard. Un media_player offline à H−30 est
+        # rattrapable ; à H, c'est un réveil raté. On vérifie une fois
+        # avant de lancer, et on prévient tout de suite.
+        await self._healthcheck_appareils(cfg)
 
         # Capture l'état d'origine AVANT de modifier quoi que ce soit. La
         # restauration au stop se basait sur l'état à H, donc post-aube : la
@@ -2677,6 +2758,14 @@ class ReveilCoordinator(DataUpdateCoordinator):
         cfg = self.entry.data
         if not cfg.get(CONF_AI_BILAN_HEBDO, False):
             return
+        # Ne pas déranger : le bilan attendra un appel manuel plutôt que
+        # de réveiller la maison.
+        if self._periode_dodo():
+            _LOGGER.info(
+                "Bilan hebdo de '%s' reporté — période de sommeil",
+                self.entry.title,
+            )
+            return
         # Les statistiques d'apprentissage étaient collectées dans le .storage
         # mais get_stats() n'avait aucun appelant : le bilan recevait la chaîne
         # « historique non disponible » et self._snooze_count, nul hors cycle.
@@ -2690,6 +2779,21 @@ class ReveilCoordinator(DataUpdateCoordinator):
                 f"rythme {'régulier' if stats.get('regulier') else 'irrégulier'}"
             )
             snoozes = stats.get("snooze_moyen", self._snooze_count)
+            # En mode « heure par jour », l'écart global mélange des heures
+            # programmées différentes : chaque jour doit raisonner sur ses
+            # propres données. « Le mardi vous vous levez à 6h52, le samedi à
+            # 8h04 » — le global reste en tête de bilan.
+            if self.entry.data.get(CONF_MODE_HEURE, "unique") == "par_jour":
+                par_jour = self._learning.get_stats_par_jour()
+                lignes = []
+                for jour_num, st in sorted(par_jour.items()):
+                    lignes.append(
+                        f"{self._learning._JOURS[jour_num].capitalize()} : "
+                        f"écart moyen {st['ecart_moyen_min']:+.0f} min "
+                        f"({st['nb_levers']} levers)"
+                    )
+                if lignes:
+                    historique += " ; " + " ; ".join(lignes)
         else:
             historique = stats.get("message", "historique non disponible")
             snoozes = self._snooze_count

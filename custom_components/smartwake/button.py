@@ -45,8 +45,21 @@ class ReveilButton(ButtonEntity):
         self._attr_has_entity_name = True
         self._attr_name = description.name
         self._attr_icon = description.icon
-        self._attr_should_poll = False
         self._attr_device_info = make_device_info(entry)
+        # Un bouton n'a pas d'état : « unknown » prêtait à confusion dans
+        # les listes d'entités et les cartes — un bouton sans état affiche
+        # simplement rien.
+        self._attr_should_poll = False
 
     async def async_press(self) -> None:
         await getattr(self.coordinator, self._action_name)()
+
+    async def async_added_to_hass(self) -> None:
+        """Écrit un état vide dès l'ajout.
+
+        Sans lui, l'entité reste « unknown » jusqu'au premier appui, ce qui
+        prête à confusion dans les listes et les cartes — « unknown »
+        suggère un appareil muet, pas un bouton jamais pressé.
+        """
+        await super().async_added_to_hass()
+        self.async_write_ha_state()
