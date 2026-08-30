@@ -1,0 +1,218 @@
+"""Platform select — choix des jours de réveil et du mode d'heure."""
+
+from __future__ import annotations
+
+import logging
+
+from typing import Any
+
+from homeassistant.components.select import SelectEntity, SelectEntityDescription
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity import EntityCategory
+from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+
+from homeassistant.exceptions import HomeAssistantError
+
+from .const import (
+    CONF_MODE_TRAVAIL_ENTITY,
+    CONF_JOURS,
+    CONF_JOURS_PERSO,
+    CONF_MODE_HEURE,
+    CONF_MODE_TRAVAIL,
+    DOMAIN,
+    JOURS_OPTIONS,
+    MODE_TRAVAIL_INDETERMINE,
+    MODE_TRAVAIL_PRESENTIEL,
+    MODE_TRAVAIL_TELETRAVAIL,
+    MOTS_PRESENTIEL,
+    MOTS_TELETRAVAIL,
+    MODE_TRAVAIL_OPTIONS,
+)
+from .coordinator import ReveilCoordinator
+from .entity import make_device_info
+
+_LOGGER = logging.getLogger(__name__)
+
+SELECT_DESC = SelectEntityDescription(
+    key="jours",
+    name="Jours",
+    icon="mdi:calendar-week",
+)
+
+MODE_HEURE_DESC = SelectEntityDescription(
+    key="mode_heure",
+    name="Mode heure",
+    icon="mdi:clock-edit",
+)
+
+# Doit rester aligné sur _calculer_prochain() du coordinator
+MODE_HEURE_OPTIONS = ["unique", "par_jour"]
+
+MODE_TRAVAIL_DESC = SelectEntityDescription(
+    key="mode_travail",
+    name="Mode travail",
+    icon="mdi:briefcase-clock",
+)
+
+
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
+    coordinator: ReveilCoordinator = hass.data[DOMAIN][entry.entry_id]
+    async_add_entities([
+        ReveilSelect(coordinator, entry, SELECT_DESC),
+        ReveilModeHeureSelect(coordinator, entry, MODE_HEURE_DESC),
+        ReveilModeTravailSelect(coordinator, entry, MODE_TRAVAIL_DESC),
+    ])
+
+
+class ReveilSelect(SelectEntity):
+    def __init__(self, coordinator, entry, description):
+        self.coordinator = coordinator
+        self.entity_description = description
+        self._attr_unique_id = f"{entry.entry_id}_select_jours"
+        self._attr_has_entity_name = True
+        self._attr_name = "Jours"
+        self._attr_icon = description.icon
+        self._attr_options = list(JOURS_OPTIONS.keys())
+        self._attr_should_poll = False
+        self._attr_device_info = make_device_info(entry)
+
+    @property
+    def current_option(self) -> str | None:
+        return self.coordinator.config.get(CONF_JOURS, "semaine")
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Jours personnalisés, pour les cartes et automatisations.
+
+        La carte dashboard lit cet attribut pour basculer un jour sans
+        passer par le menu d'options : sans lui, elle lisait un attribut
+        inexistant et envoyait une liste vide — effaçant la sélection.
+        """
+        return {"jours_perso": self.coordinator.config.get(CONF_JOURS_PERSO, [])}
+
+    async def async_select_option(self, option: str) -> None:
+        if option not in JOURS_OPTIONS:
+            return
+        # « Personnalisé » suppose une liste de jours, que seul le menu
+        # d'options permet de saisir. L'accepter sans cette liste désactivait
+        # silencieusement le réveil : plus aucun jour actif, donc plus de
+        # prochain déclenchement.
+        await self.coordinator.set_jours(option)
+
+    async def async_added_to_hass(self) -> None:
+        self.async_on_remove(self.coordinator.async_add_listener(self._handle_update))
+        # Suivre l'entité dynamique en temps réel : sans cela, l'option ne se
+        # mettait à jour qu'au prochain rafraîchissement du coordinator.
+        entite = self.coordinator.config.get(CONF_MODE_TRAVAIL_ENTITY)
+        if entite:
+            self.async_on_remove(
+                async_track_state_change_event(
+                    self.hass, [entite], self._handle_update
+                )
+            )
+
+    def _handle_update(self, *args) -> None:
+        self.async_write_ha_state()
+
+
+class ReveilModeHeureSelect(SelectEntity):
+    """Heure unique pour tous les jours, ou une heure par jour de la semaine."""
+
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(self, coordinator, entry, description):
+        self.coordinator = coordinator
+        self.entity_description = description
+        self._attr_unique_id = f"{entry.entry_id}_select_mode_heure"
+        self._attr_has_entity_name = True
+        self._attr_name = description.name
+        self._attr_icon = description.icon
+        self._attr_options = list(MODE_HEURE_OPTIONS)
+        self._attr_should_poll = False
+        self._attr_device_info = make_device_info(entry)
+
+    @property
+    def current_option(self) -> str | None:
+        return self.coordinator.config.get(CONF_MODE_HEURE, "unique")
+
+    async def async_select_option(self, option: str) -> None:
+        if option in MODE_HEURE_OPTIONS:
+            await self.coordinator.set_config_value(CONF_MODE_HEURE, option)
+
+    async def async_added_to_hass(self) -> None:
+        self.async_on_remove(self.coordinator.async_add_listener(self._handle_update))
+
+    def _handle_update(self) -> None:
+        self.async_write_ha_state()
+
+class ReveilModeTravailSelect(SelectEntity):
+    """Mode de travail, pilotable depuis un tableau de bord ou une automatisation.
+
+    N'était modifiable que dans les options. L'exposer en entité permet de le
+    basculer sans passer par le menu de configuration — utile pour un rythme qui
+    change au jour le jour.
+    """
+
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(self, coordinator, entry, description):
+        self.coordinator = coordinator
+        self.entity_description = description
+        self._attr_unique_id = f"{entry.entry_id}_select_mode_travail"
+        self._attr_has_entity_name = True
+        self._attr_name = description.name
+        self._attr_icon = description.icon
+        self._attr_options = list(MODE_TRAVAIL_OPTIONS)
+        self._attr_should_poll = False
+        self._attr_device_info = make_device_info(entry)
+
+    @property
+    def current_option(self) -> str | None:
+        """Mode de travail, dynamique si une entité est configurée.
+
+        Lit l'entité configurée (input_select, capteur, calendrier) pour
+        refléter son état en temps réel. Sans entité, retombe sur la valeur
+        statique de la configuration.
+        """
+        entite = self.coordinator.config.get(CONF_MODE_TRAVAIL_ENTITY)
+        if entite:
+            etat = self.hass.states.get(entite)
+            if etat is not None and etat.state not in ("unknown", "unavailable"):
+                brut = str(etat.state).lower()
+                if any(mot in brut for mot in MOTS_TELETRAVAIL):
+                    return MODE_TRAVAIL_TELETRAVAIL
+                if any(mot in brut for mot in MOTS_PRESENTIEL):
+                    return MODE_TRAVAIL_PRESENTIEL
+                # Valeur non reconnue : on ne devine pas, on reste indéterminé
+                return MODE_TRAVAIL_INDETERMINE
+        return self.coordinator.config.get(CONF_MODE_TRAVAIL, MODE_TRAVAIL_INDETERMINE)
+
+    async def async_select_option(self, option: str) -> None:
+        if option not in MODE_TRAVAIL_OPTIONS:
+            return
+        # Si une entité dynamique est configurée, on écrit dans celle-ci plutôt
+        # que dans la config statique.
+        entite = self.coordinator.config.get(CONF_MODE_TRAVAIL_ENTITY)
+        if entite:
+            domaine = entite.split(".")[0]
+            if domaine == "input_select":
+                await self.hass.services.async_call(
+                    "input_select", "select_option",
+                    {"entity_id": entite, "option": option},
+                    blocking=True,
+                )
+                return
+        # Sans entité dynamique, on écrit dans la config
+        await self.coordinator.set_config_value(CONF_MODE_TRAVAIL, option)
+
+    async def async_added_to_hass(self) -> None:
+        self.async_on_remove(self.coordinator.async_add_listener(self._handle_update))
+
+    def _handle_update(self) -> None:
+        self.async_write_ha_state()

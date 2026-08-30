@@ -1,0 +1,307 @@
+{
+  "title": "SmartWAKE",
+  "config": {
+    "step": {
+      "user": {
+        "title": "⏰ Créer un réveil",
+        "description": "Donnez un nom, une heure, les jours actifs et choisissez un preset.\n\nVous pourrez tout ajuster ensuite via « Configurer ».\n\n**Presets :**\n- 🎵 **Simple** — musique + notification\n- 🌅 **Confort** — musique + lumière progressive + notification\n- 🏠 **Complet** — tout (chauffage, volets, IA, scène matin...)",
+        "data": {
+          "name": "Nom du réveil (accents acceptés)",
+          "heure": "Heure de réveil",
+          "jours": "Jours actifs",
+          "jours_perso": "Jours personnalisés (si mode Personnalisé)",
+          "preset": "Preset de démarrage"
+        },
+        "data_description": {
+          "name": "Ex : Réveil semaine, Réveil sport. Les accents sont convertis automatiquement (Réveil → reveil).",
+          "heure": "L'heure à laquelle le réveil se déclenchera.",
+          "jours": "Choisissez un mode prédéfini ou « Personnalisé » pour sélectionner des jours spécifiques.",
+          "jours_perso": "Cochez les jours où le réveil doit sonner. Visible uniquement si Jours = Personnalisé.",
+          "preset": "Le preset prédéfinit les options. Tout est modifiable après via Configurer."
+        }
+      }
+    },
+    "error": {
+      "media_required": "Sélectionnez un lecteur de musique si la musique est activée",
+      "light_required": "Sélectionnez une lumière si la lumière progressive est activée",
+      "jours_perso_required": "Sélectionnez au moins un jour si mode Personnalisé",
+      "invalid_name": "Le nom est trop long (50 caractères max)"
+    },
+    "abort": {
+      "already_configured": "Un réveil avec ce nom existe déjà"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Configurer le réveil",
+        "description": "Choisissez une section à modifier.",
+        "menu_options": {
+          "base": "⏰ Base — heure, jours, mode vacances",
+          "musique": "🎵 Musique — source et volume progressif",
+          "lumiere": "💡 Lumière & aube — simulation de lever",
+          "confort": "🏠 Confort — chauffage, volets, cafetière",
+          "intelligence": "🧠 Intelligence — présence, fériés, agenda",
+          "notification": "📱 Notification — mobile, TTS, escalade",
+          "ai": "🤖 AI Task — briefing et suggestions IA",
+          "test_ia": "🧪 Tester les tâches IA",
+          "securite": "🔒 Sécurité nocturne"
+        }
+      },
+      "base": {
+        "title": "Base",
+        "description": "Réglages de base du réveil : heure, jours, mode vacances.",
+        "data": {
+          "heure": "Heure de réveil",
+          "jours": "Jours actifs",
+          "jours_perso": "Jours personnalisés",
+          "ponctuel": "Réveil ponctuel (une seule fois)",
+          "skip_prochain": "Sauter le prochain réveil",
+          "mode_vacances": "Mode vacances",
+          "mode_heure": "Mode d'heure",
+          "heure_lundi": "Heure du lundi",
+          "heure_mardi": "Heure du mardi",
+          "heure_mercredi": "Heure du mercredi",
+          "heure_jeudi": "Heure du jeudi",
+          "heure_vendredi": "Heure du vendredi",
+          "heure_samedi": "Heure du samedi",
+          "heure_dimanche": "Heure du dimanche",
+          "mode_vacances_entity": "Entité de mode vacances",
+          "rattrapage_min": "Rattrapage au démarrage (min)"
+        },
+        "data_description": {
+          "heure": "L'heure à laquelle le réveil se déclenchera (ex : 07:00).",
+          "jours": "Mode prédéfini (Tous, Semaine, Weekend) ou Personnalisé pour choisir des jours spécifiques.",
+          "jours_perso": "Cochez les jours. Visible uniquement si Jours = Personnalisé.",
+          "ponctuel": "Si activé, le réveil se désactive automatiquement après avoir sonné une fois.",
+          "skip_prochain": "Saute uniquement le prochain réveil, sans modifier la planification. Se remet à zéro après.",
+          "mode_vacances": "Suspend ce réveil indéfiniment. Désactivez pour reprendre.",
+          "mode_heure": "« Heure unique » applique la même heure tous les jours. « Heure par jour » utilise les sept heures ci-dessous.",
+          "heure_lundi": "Utilisée uniquement en mode « Heure par jour ».",
+          "mode_vacances_entity": "Calendrier, input_boolean, binary_sensor ou personne. Le réveil ne sonne pas quand cette entité est « on ».",
+          "rattrapage_min": "Si Home Assistant redémarre juste après l'heure du réveil (mise à jour, coupure), le réveil se déclenche quand même tant que le retard n'excède pas cette valeur. 0 pour désactiver."
+        }
+      },
+      "musique": {
+        "title": "🎵 Musique",
+        "description": "Source musicale et volume progressif. La musique démarre à l'heure du réveil avec un volume faible qui augmente progressivement.",
+        "data": {
+          "musique_activee": "Activer la musique",
+          "media_player": "Lecteur de musique",
+          "playlist": "Source musicale (playlist / radio / favoris)",
+          "volume_initial": "Volume initial",
+          "volume_final": "Volume final",
+          "volume_duree": "Durée montée volume (min)",
+          "musique_style_soleil": "Style musical — grand soleil",
+          "musique_style_nuageux": "Style musical — ciel couvert ou brouillard",
+          "musique_style_pluie": "Style musical — pluie ou averses",
+          "musique_style_neige": "Style musical — neige",
+          "musique_style_tempete": "Style musical — orage ou vent fort",
+          "playlist_douce": "Playlist douce (alternative)",
+          "playlist_energique": "Playlist énergique (alternative)"
+        },
+        "data_description": {
+          "musique_activee": "Active la musique au moment du réveil.",
+          "media_player": "Le lecteur qui jouera la musique (Sonos, Google Cast, Squeezebox...).",
+          "playlist": "Obligatoire si la musique est activée : sans elle, la lecture échoue et le réveil retombe sur l'annonce vocale.",
+          "volume_initial": "Volume de départ, faible pour un réveil en douceur (ex : 0.05 = 5%).",
+          "volume_final": "Volume final atteint après la montée progressive (ex : 0.35 = 35%).",
+          "volume_duree": "Durée de la montée du volume, en minutes. Le volume augmente par paliers.",
+          "musique_style_soleil": "Style ou ambiance souhaitée, en toutes lettres : « énergique, pop » par exemple. Laissez vide pour laisser l'IA décider seule.",
+          "playlist_douce": "Proposée à l'IA de musique adaptative par temps de pluie ou de neige. Laissez vide si vous n'en voulez qu'une.",
+          "playlist_energique": "Proposée à l'IA de musique adaptative par beau temps."
+        }
+      },
+      "lumiere": {
+        "title": "💡 Lumière & aube",
+        "description": "Simulation d'aube : la luminosité augmente progressivement avant l'heure du réveil pour un réveil naturel.",
+        "data": {
+          "lumiere_activee": "Activer la lumière progressive",
+          "lumiere": "Lumière",
+          "brightness_max": "Luminosité max (1-255)",
+          "duree_progressive": "Durée éclairage (min)",
+          "aube_min": "Aube avant l'heure H (min)",
+          "lumiere_couleur": "Couleur de la lumière",
+          "lumiere_temp_couleur": "Température de couleur",
+          "lumiere_courbe": "Forme de la montée",
+          "lumiere_scene": "Scène en fin de montée"
+        },
+        "data_description": {
+          "lumiere_activee": "Active la simulation d'aube — la lumière augmente progressivement.",
+          "lumiere": "La lampe de chambre qui servira pour l'aube progressive.",
+          "brightness_max": "Luminosité maximale atteinte (1-255, 255 = 100%).",
+          "duree_progressive": "Durée totale de l'augmentation de luminosité, en minutes.",
+          "aube_min": "L'aube démarre X minutes avant l'heure du réveil (ex : 20 = l'aube commence à H-20min).",
+          "lumiere_couleur": "Laissez vide pour ne pas imposer de couleur. Une couleur explicite prime sur la température ci-dessous, Home Assistant refusant les deux à la fois.",
+          "lumiere_temp_couleur": "2000 K pour une lumière très chaude proche du lever de soleil, 6500 K pour une lumière froide. Sans effet si une couleur est choisie.",
+          "lumiere_courbe": "La montée douce paraît plus naturelle : l'œil perçoit mal les écarts dans les niveaux bas.",
+          "lumiere_scene": "Appliquée une fois la luminosité maximale atteinte. Permet une ambiance sur plusieurs lampes, que la montée d'une seule luminosité ne sait pas rendre."
+        }
+      },
+      "confort": {
+        "title": "🏠 Confort",
+        "description": "La maison se prépare avant votre réveil : chauffage, eau chaude, café, volets.",
+        "data": {
+          "prechauffe_min": "Pré-chauffage avant (min)",
+          "radiateur": "Radiateur / thermostat",
+          "chauffe_eau": "Chauffe-eau / sèche-serviettes",
+          "cafetiere": "Cafetière / bouilloire",
+          "cafetiere_min": "Café avant (min)",
+          "volets": "Volets à ouvrir",
+          "volets_soleil": "Ouvrir volets seulement si soleil levé",
+          "scenes_matin": "Activer la scène matin",
+          "volets_position": "Position d'ouverture des volets (%)",
+          "scene_matin_entities": "Scènes à activer le matin"
+        },
+        "data_description": {
+          "prechauffe_min": "Le radiateur passe en mode confort X minutes avant l'heure du réveil (ex : 45 = pré-chauffe à H-45min).",
+          "radiateur": "L'entité climate (thermostat/radiateur) qui sera mise en mode confort.",
+          "chauffe_eau": "Prise connectée du chauffe-eau ou sèche-serviettes, allumée avant le réveil.",
+          "cafetiere": "Prise connectée de la cafetière/bouilloire, allumée X minutes avant le réveil.",
+          "cafetiere_min": "La cafetière s'allume X minutes avant l'heure du réveil.",
+          "volets": "Le volet/cover à ouvrir au réveil. Laisse vide pour ne pas ouvrir.",
+          "volets_soleil": "Si activé, les volets ne s'ouvrent que si le soleil est levé (sun.sun above_horizon). Sinon, ouverture au lever du soleil.",
+          "scenes_matin": "Active l'éclairage des autres pièces (couloir, cuisine) au réveil."
+        }
+      },
+      "intelligence": {
+        "title": "🧠 Intelligence",
+        "description": "Conditions intelligentes : ne sonne pas si absent, ignore les fériés, détecte le lever, escalade progressive.",
+        "data": {
+          "presence": "Présence (person)",
+          "workday_sensor": "Capteur jours fériés",
+          "ignorer_feries": "Ignorer les jours fériés",
+          "vacances_scolaires_calendar": "Calendrier vacances scolaires",
+          "ignorer_vacances_scolaire": "Ignorer pendant vacances scolaires",
+          "mouvement_sdb": "Capteur mouvement SdB",
+          "mouvement_stop": "Arrêter au mouvement SdB",
+          "lever_anticippe": "Annuler si lever anticipé",
+          "mouvement_cuisine": "Capteur mouvement cuisine",
+          "escalade_intelligente": "Escalade progressive (3 niveaux)",
+          "presence_lit_sensors": "Capteurs de présence au lit",
+          "mode_travail": "Mode de travail habituel",
+          "mode_travail_entity": "Entité indiquant le mode de travail",
+          "adaptatif_agenda": "Avancer selon l'agenda",
+          "agenda_entity": "Calendrier",
+          "agenda_marge_min": "Marge avant le rendez-vous (min)"
+        },
+        "data_description": {
+          "presence": "Le réveil NE sonnera PAS si cette personne n'est pas à la maison. Laisse vide pour toujours sonner.",
+          "workday_sensor": "Capteur binary_sensor de l'intégration Workday (jours fériés officiels français).",
+          "ignorer_feries": "Si activé, le réveil est désactivé les jours fériés (via le capteur workday ci-dessus).",
+          "vacances_scolaires_calendar": "Calendrier des vacances scolaires (intégration Calendar avec flux ICS de l'Éducation nationale).",
+          "ignorer_vacances_scolaire": "Si activé, le réveil est désactivé pendant les vacances scolaires (via le calendrier ci-dessus).",
+          "mouvement_sdb": "Capteur de mouvement dans la salle de bain. Sert pour l'arrêt automatique.",
+          "mouvement_stop": "Si activé, le réveil s'arrête automatiquement quand un mouvement est détecté dans la salle de bain (= vous êtes levé).",
+          "lever_anticippe": "Si activé et que vous êtes déjà levé (mouvement cuisine détecté avant l'heure), le réveil s'annule.",
+          "mouvement_cuisine": "Capteur de mouvement dans la cuisine. Détecte un lever anticipé avant l'heure du réveil.",
+          "escalade_intelligente": "Si activé, l'escalade est progressive : 5 min (volume 60%), 10 min (80%), 15 min (100%). Au lieu de tout à 100% d'un coup.",
+          "presence_lit_sensors": "Capteurs indiquant qu'une personne est couchée : tapis ou capteur sous matelas (Withings Sleep…), radar millimétrique, capteur de pression. Le réveil ne sonne pas si personne n'est au lit, et sert aussi à vérifier le lever.",
+          "mode_travail": "Sert aux tâches IA : en télétravail, le trajet et la météo n'influencent ni le briefing ni l'heure suggérée.",
+          "mode_travail_entity": "Pour un rythme alterné. Une entité renseignée prime sur le mode fixe ci-dessus. Tout état contenant « télétravail », « remote » ou « maison » est compris comme du télétravail ; « présentiel », « bureau » ou « site » comme du présentiel.",
+          "adaptatif_agenda": "Avance le réveil pour arriver à l'heure à votre premier rendez-vous du jour.",
+          "agenda_entity": "Calendrier dont le premier événement de la journée sert de référence.",
+          "agenda_marge_min": "Temps à réserver avant le rendez-vous : préparation et trajet. Le réveil est calé sur début du rendez-vous moins cette marge, sans jamais dépasser l'heure habituelle."
+        }
+      },
+      "notification": {
+        "title": "📱 Notification",
+        "description": "Notification mobile avec boutons Snooze/Stop, briefing vocal TTS, et escalade si pas de réponse.",
+        "data": {
+          "notification_activee": "Activer la notification",
+          "notify_device": "Service notification mobile",
+          "notif_titre": "Titre notification",
+          "notif_message": "Message notification",
+          "tts_activee": "Briefing vocal au Stop",
+          "tts_entity": "Entité TTS",
+          "snooze_duree": "Snooze (min)",
+          "snooze_max": "Max snooze",
+          "escalade_min": "Escalade après (min)",
+          "tts_message": "Message vocal (TTS)",
+          "tts_engine": "Moteur de synthèse vocale"
+        },
+        "data_description": {
+          "notification_activee": "Envoie une notification sur votre téléphone avec les boutons Snooze et Stop.",
+          "notify_device": "Le service de notification mobile (ex : notify.mobile_app_mon_telephone).",
+          "notif_titre": "Titre affiché dans la notification.",
+          "notif_message": "Message affiché dans la notification.",
+          "tts_activee": "Si activé, un briefing vocal est lu quand vous arrêtez le réveil (météo, agenda).",
+          "tts_entity": "Enceinte sur laquelle le message est joué.",
+          "snooze_duree": "Durée d'un snooze en minutes. La musique et la lumière reprennent après.",
+          "snooze_max": "Nombre maximum de snoozes avant que le réveil ne se bloque.",
+          "escalade_min": "Si vous n'avez pas appuyé sur Stop après X minutes, le réveil escalade (volume max + lumières 100%).",
+          "tts_engine": "Entité du domaine tts (Google Translate, Piper, Cloud…). Laissez vide pour utiliser le premier moteur détecté."
+        }
+      },
+      "ai": {
+        "title": "🤖 AI Task (optionnel)",
+        "description": "## Fonctionnalités IA\n\nSmartWAKE peut utiliser l'IA de HA pour rendre votre réveil plus intelligent. **Tout est optionnel** — le réveil fonctionne sans IA.\n\n### Prérequis\n1. HA ≥ 2025.8\n2. Une intégration AI Task configurée : **Paramètres → Système → AI Task**\n3. Choisissez un fournisseur : **Ollama** (local, gratuit) ou **Anthropic / Google / OpenAI** (cloud)\n\n### Comment ça marche\n- Vous n'avez **pas** à créer de prompts pour les fonctions prédéfinies — SmartWAKE les génère automatiquement\n- Vous n'avez **pas** à créer plusieurs tasks — une seule entité AI Task suffit pour toutes les fonctions\n- L'IA **ne déclenche jamais** la sonnerie — elle propose, vous validez\n- Si l'IA est indisponible, le réveil fonctionne normalement (fallback automatique)\n\n### AI Task personnalisée\nVous pouvez définir **votre propre prompt** pour une analyse custom. Le résultat est envoyé par notification.\n\n### Sécurité\n⚠️ L'entité AI Task ne doit **pas** avoir accès aux services HA (permissions minimales).",
+        "data": {
+          "ai_briefing": "Briefing matinal généré par IA",
+          "ai_task_entity": "Entité AI Task (une seule pour tout)",
+          "ai_musique_adapt": "Musique adaptative IA",
+          "ai_suggestion_heure": "Suggestion d'heure du soir",
+          "ai_bilan_hebdo": "Bilan sommeil hebdomadaire",
+          "ai_verif_lever": "Vérif lever caméra+IA",
+          "weather_entity": "Météo (pour le briefing IA)",
+          "trajet_sensor": "Capteur trajet (pour le briefing IA)",
+          "batterie_sensor": "Capteur batterie (pour le briefing IA)",
+          "ai_custom_enabled": "Activer une AI task personnalisée",
+          "ai_custom_prompt": "Votre prompt personnalisé",
+          "ai_custom_trigger": "Quand exécuter cette task",
+          "ai_custom_entities": "Entités à inclure dans le contexte",
+          "sommeil_sensors": "Capteurs de sommeil",
+          "ai_briefing_si_travail": "Briefing uniquement les jours travaillés",
+          "ai_suggestion_heure_planif": "Heure de la suggestion du soir",
+          "ai_bilan_jour": "Jour du bilan hebdomadaire",
+          "ai_bilan_heure_planif": "Heure du bilan hebdomadaire"
+        },
+        "data_description": {
+          "ai_briefing": "**Recommandé** — Au moment du Stop, l'IA rédige un briefing naturel (météo, premier RDV de l'agenda, temps de trajet, batterie du téléphone) et le lit via TTS. Cochez + sélectionnez l'entité AI Task ci-dessous.\n\n**Prompt utilisé :** « Tu es un assistant matinal. Rédige un briefing parlé de 30 secondes max, en français, ton chaleureux, sans listes ni emojis. Mentionne un conseil pertinent (parapluie, partir plus tôt si trafic, charger le téléphone si <30%). Termine par une phrase motivante courte. »",
+          "ai_task_entity": "Sélectionnez votre entité AI Task (configurée dans Paramètres → Système → AI Task). **Une seule entité suffit** pour toutes les fonctions IA. Si vide, les fonctions IA sont désactivées.",
+          "ai_musique_adapt": "Au déclenchement, l'IA choisit la playlist selon la météo (pluie = jazz doux, beau temps = énergique).\n\n**Prompt utilisé :** « Choisis la meilleure source de réveil parmi ces options exactes : [playlists]. Pluie ou froid = choix doux. Beau temps = choix énergique. »",
+          "ai_suggestion_heure": "Chaque soir à 21:30, l'IA analyse votre agenda et propose une heure de réveil optimale. Vous recevez une notification avec boutons **Accepter** / **Refuser**.\n\n**Prompt utilisé :** « Calcule l'heure de réveil idéale. Si aucun événement, garde l'heure actuelle. Ne propose jamais avant 05:30. »",
+          "ai_bilan_hebdo": "Active le service `smartwake.bilan_hebdo` — à appeler via automation le dimanche. L'IA synthétise votre semaine (snoozes, heures de lever) et envoie des recommandations.\n\n**Prompt utilisé :** « Rédige un bilan bienveillant en 3 phrases + 1 conseil concret (ex : avancer le coucher de 20 min, réduire le snooze). »",
+          "ai_verif_lever": "10 min après le Stop, l'IA prend une photo de la chambre et vérifie si vous êtes levé. Si vous vous êtes rendormi → escalade immédiate. ⚠️ Caméra en chambre = question de vie privée.\n\n**Prompt utilisé :** « Cette image vient de la chambre. Y a-t-il une personne allongée dans le lit ? »",
+          "weather_entity": "L'entité météo utilisée par l'IA pour le briefing et le choix musical. Ex : `weather.home` ou `weather.maison`.",
+          "trajet_sensor": "Capteur de temps de trajet (ex : `sensor.waze_trajet_travail`) mentionné dans le briefing IA. Optionnel.",
+          "batterie_sensor": "Capteur de batterie de votre téléphone (ex : `sensor.mon_tel_battery_level`) mentionné dans le briefing IA. Optionnel.",
+          "ai_custom_enabled": "Active une AI task personnalisée avec **votre propre prompt**. Le résultat est envoyé par notification.",
+          "ai_custom_prompt": "Tapez votre prompt ici. Ex : « Analyse la qualité de l'air dans la chambre et donne un conseil pour la journée. » Les valeurs des entités sélectionnées ci-dessous sont ajoutées automatiquement au contexte.",
+          "ai_custom_trigger": "Quand exécuter votre task : au déclenchement du réveil, au Stop (quand vous vous levez), ou le soir à 21:30.",
+          "ai_custom_entities": "Sélectionnez les entités dont les valeurs doivent être incluses dans le contexte de votre prompt. Ex : sensor.co2_chambre, sensor.qualite_air, weather.home.",
+          "sommeil_sensors": "Capteurs à transmettre au bilan hebdomadaire : score de sommeil, durées de sommeil profond/léger/paradoxal, réveils nocturnes, endormissement, ronflement… Compatible Withings, Fitbit, Oura ou tout autre capteur. Les moyennes sur 7 jours sont calculées automatiquement.",
+          "ai_briefing_si_travail": "Utilise le capteur de jours travaillés configuré dans la section Intelligence.",
+          "ai_bilan_jour": "Le bilan portait uniquement sur un appel manuel du service smartwake.bilan_hebdo ; il est désormais planifié."
+        }
+      },
+      "test_ia": {
+        "title": "Tester les tâches IA",
+        "description": "Choisissez une tâche et validez pour l'exécuter immédiatement, sans attendre son créneau habituel.\n\n**Dernier résultat :**\n```\n{resultat}\n```",
+        "data": {
+          "tache": "Tâche à exécuter"
+        },
+        "data_description": {
+          "tache": "L'option correspondante est activée le temps du test, même si elle est désactivée dans la configuration."
+        }
+      },
+      "securite": {
+        "title": "Sécurité nocturne",
+        "description": "Vérifie chaque soir que les portes, volets et portails sont fermés. Une notification est envoyée si une ouverture reste ouverte.",
+        "data": {
+          "verif_nocturne": "Activer la vérification nocturne",
+          "verif_nocturne_heure": "Heure de la vérification",
+          "verif_nocturne_entities": "Ouvertures à surveiller",
+          "verif_nocturne_message": "Message de la notification"
+        },
+        "data_description": {
+          "verif_nocturne_entities": "Portes, volets, portail, garage — toute entité dont l'état « fermé » est off, closed, locked ou 0.",
+          "verif_nocturne_message": "Texte qui précède la liste des ouvertures restées ouvertes."
+        }
+      }
+    },
+    "error": {
+      "jours_perso_required": "Choisissez au moins un jour, sinon le réveil ne sonnera jamais."
+    }
+  }
+}
