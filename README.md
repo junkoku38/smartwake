@@ -9,7 +9,7 @@ avec assistance IA optionnelle.
 <p align="center">
   <img src="https://img.shields.io/badge/Home%20Assistant-2024.1%2B-41BDF5?logo=home-assistant&logoColor=white" />
   <img src="https://img.shields.io/badge/HACS-Custom-41BDF5?logo=home-assistant-community-store&logoColor=white" />
-  <img src="https://img.shields.io/badge/version-2.6.0-blue" />
+  <img src="https://img.shields.io/badge/version-2.32.1-blue" />
   <img src="https://img.shields.io/badge/python-3.12%2B-yellow" />
   <img src="https://img.shields.io/badge/security-bandit%200%20finding-green" />
   <img src="https://img.shields.io/badge/security-semgrep%200%20finding-green" />

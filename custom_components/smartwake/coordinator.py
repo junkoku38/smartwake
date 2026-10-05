@@ -227,6 +227,11 @@ class ReveilCoordinator(DataUpdateCoordinator):
         self._snooze_fin = None
         self._reveil_en_cours = False
         self._snooze_count = 0
+        # Vrai dès que l'escalade a écrit le volume. La rampe de musique ne
+        # sait pas qu'elle existe et réécrit le volume à son palier suivant :
+        # escalade à +5 min et rampe sur 5 min se recouvraient, d'où un pic à
+        # 100 % suivi aussitôt d'une chute au palier de la rampe.
+        self._volume_verrouille = False
         self._skip_prochain = False
         # États d'origine des appareils modifiés pendant le cycle (prewake
         # inclus), pour les restaurer au stop. Capturés au démarrage du
@@ -782,6 +787,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
             self._prochain = None
             self._nettoyer_triggers()
             self._reveil_en_cours = False
+            self._volume_verrouille = False
             self._aube_faite = False
             self._snooze_fin = None
             self._etats_initiaux = {}
@@ -1319,6 +1325,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
         self._aube_faite = False
         self._reveil_en_cours = False
         self._etats_initiaux = {}
+        self._volume_verrouille = False
         self._pending_ringing = False
         self._statut_avant_snooze = None
         self._statut = STATUT_IDLE if self._actif else STATUT_INACTIF
@@ -1516,6 +1523,9 @@ class ReveilCoordinator(DataUpdateCoordinator):
         self._reveil_en_cours = True
         self._snooze_count = 0
         self._statut = STATUT_RINGING
+        # Nouveau cycle : la rampe de volume reprend la main tant qu'aucune
+        # escalade n'est passée (voir _escalade_niveau).
+        self._volume_verrouille = False
 
         # Sauvegarde l'état initial des appareils pour les restaurer au stop.
         # Délégué à _capturer_etats_initiaux() qui ne fait rien si le pré-réveil
@@ -1747,6 +1757,13 @@ class ReveilCoordinator(DataUpdateCoordinator):
         increment = (vol_final - vol_initial) / steps
         for i in range(steps):
             await asyncio.sleep(60)
+            if self._volume_verrouille:
+                # L'escalade a pris le contrôle du volume (60/80/100 %) :
+                # réécrire le palier suivant ramenait le volume bas juste
+                # après le pic d'escalade (les deux minuteries partent à
+                # quelques millisecondes d'écart, elles se recouvrent).
+                _LOGGER.debug("Rampe volume suspendue — escalade active")
+                return
             vol = min(vol_initial + increment * (i + 1), vol_final)
             try:
                 await self.hass.services.async_call(
@@ -1879,6 +1896,11 @@ class ReveilCoordinator(DataUpdateCoordinator):
         cfg = self.entry.data
         _LOGGER.info("Escalade niveau %s pour '%s'", niveau, self.entry.title)
         self._fire_event("smartwake_escalade", level=niveau)
+        # À partir d'ici, la rampe de musique ne touche plus le volume : sans
+        # ce verrou, son palier suivant écrasait l'escalade environ 1 s après
+        # le pic (100 % → volume de rampe), l'escalade étant vaincue à chaque
+        # écriture de la rampe.
+        self._volume_verrouille = True
         if cfg.get(CONF_MUSIQUE_ACTIVEE) and cfg.get(CONF_MEDIA_PLAYER):
             try:
                 await self.hass.services.async_call(
@@ -2117,6 +2139,9 @@ class ReveilCoordinator(DataUpdateCoordinator):
 
         # Volume max
         if cfg.get(CONF_MUSIQUE_ACTIVEE) and cfg.get(CONF_MEDIA_PLAYER):
+            # Verrouille la rampe, sinon son palier suivant ramenait le
+            # volume à 35 % juste après le passage à 100 %.
+            self._volume_verrouille = True
             try:
                 await self.hass.services.async_call(
                     "media_player", "volume_set",
@@ -2324,6 +2349,12 @@ class ReveilCoordinator(DataUpdateCoordinator):
                     await asyncio.sleep(60)
                     if not self._reveil_en_cours or self._statut != STATUT_RINGING:
                         return
+                    if self._volume_verrouille:
+                        # L'escalade a écrit le volume (possible pendant la
+                        # fenêtre de reprise) : ramper « depuis le volume
+                        # actuel » partait alors de 100 % pour redescendre vers
+                        # vol_final. On s'arrête.
+                        return
                     vol = min(vol_initial + increment * (i + 1), vol_final)
                     try:
                         await self.hass.services.async_call(
@@ -2509,6 +2540,8 @@ class ReveilCoordinator(DataUpdateCoordinator):
         self._etats_initiaux = {}
         self._pending_ringing = False
         self._statut_avant_snooze = None
+        # Prochain cycle : la rampe de volume repart de zéro.
+        self._volume_verrouille = False
         self._statut = STATUT_DONE
         # Réarme le déclencheur pour l'occurrence suivante : la planification
         # est à usage unique depuis le passage en point-dans-le-temps.
@@ -2647,6 +2680,7 @@ class ReveilCoordinator(DataUpdateCoordinator):
         self._snooze_fin = None
         self._reveil_en_cours = False
         self._etats_initiaux = {}
+        self._volume_verrouille = False
         self._pending_ringing = False
         self._statut_avant_snooze = None
         self._statut = STATUT_IDLE if self._actif else STATUT_INACTIF

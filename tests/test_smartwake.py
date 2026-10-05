@@ -3629,3 +3629,127 @@ async def test_healthcheck_previent_avant_le_cycle(coordinator):
         await coordinator._healthcheck_appareils(coordinator.entry.data)
     assert notifie, "une notification d'avertissement doit partir"
     assert "media_player.morte" in str(notifie[0])
+
+
+# ── Tests escalade / rampe de volume ───────────────────────────
+
+@pytest.mark.asyncio
+async def test_escalade_verrouille_la_rampe_volume(coordinator):
+    """Régression : la rampe de musique réécrivait son palier environ 1 s
+    après le passage d'escalade, ramenant le volume de 60/80/100 % au niveau
+    de la rampe — pic sonore suivi d'une chute audible."""
+    coordinator.entry.data = {
+        **coordinator.entry.data,
+        "musique_activee": True, "media_player": "media_player.chambre",
+        "lumiere_activee": False,
+    }
+    coordinator._reveil_en_cours = True
+    coordinator._statut = "ringing"
+
+    await coordinator._escalade_niveau(0.6, 60, "doux")
+
+    assert coordinator._volume_verrouille is True
+    appels = [c for c in coordinator.hass.services.calls
+              if c["service"] == "volume_set"]
+    assert appels and appels[-1]["data"]["volume_level"] == 0.6
+
+
+@pytest.mark.asyncio
+async def test_escalade_classique_verrouille_et_pousse_a_100(coordinator):
+    """L'escalade classique passe à 100 % et interdit à la rampe de ramener
+    le volume en arrière."""
+    coordinator.entry.data = {
+        **coordinator.entry.data,
+        "musique_activee": True, "media_player": "media_player.chambre",
+        "escalade_min": 2, "lumiere_activee": False,
+    }
+    coordinator._reveil_en_cours = True
+    coordinator._statut = "ringing"
+
+    await coordinator._escalade(2)
+
+    assert coordinator._volume_verrouille is True
+    appels = [c for c in coordinator.hass.services.calls
+              if c["service"] == "volume_set"]
+    assert appels and appels[-1]["data"]["volume_level"] == 1.0
+
+
+@pytest.mark.asyncio
+async def test_rampe_volume_suspendue_apres_escalade(coordinator):
+    """Régression du symptôme « très forte puis retour à la normal 1 s après » :
+    une fois l'escalade passée, la rampe ne réécrit plus le volume."""
+    coordinator.entry.data = {
+        **coordinator.entry.data,
+        "musique_activee": True, "media_player": "media_player.chambre",
+        "playlist": "FV:2/7", "volume_initial": 0.05,
+        "volume_final": 0.35, "volume_duree": 5,
+        "lumiere_activee": False,
+    }
+    coordinator._volume_verrouille = True  # l'escalade vient de déclencher
+
+    await coordinator._demarrer_musique()
+
+    appels = [c for c in coordinator.hass.services.calls
+              if c["service"] == "volume_set"]
+    # Un seul volume_set : celui du volume initial, au lancement de la
+    # musique. Sans le verrou, la rampe réécrivait ensuite ses 5 paliers
+    # (0.11 … 0.35) par-dessus le niveau posé par l'escalade.
+    assert len(appels) == 1
+    assert appels[0]["data"]["volume_level"] == 0.05
+
+
+@pytest.mark.asyncio
+async def test_rampe_volume_normale_sans_escalade(coordinator):
+    """Sans escalade, la rampe monte bien de volume_initial à volume_final."""
+    coordinator.entry.data = {
+        **coordinator.entry.data,
+        "musique_activee": True, "media_player": "media_player.chambre",
+        "playlist": "FV:2/7", "volume_initial": 0.05,
+        "volume_final": 0.35, "volume_duree": 5,
+        "lumiere_activee": False,
+    }
+    coordinator._volume_verrouille = False
+
+    await coordinator._demarrer_musique()
+
+    appels = [c for c in coordinator.hass.services.calls
+              if c["service"] == "volume_set"]
+    niveaux = [c["data"]["volume_level"] for c in appels]
+    assert niveaux[0] == 0.05
+    assert niveaux[-1] == 0.35
+    assert len(appels) == 6  # volume initial + 5 paliers
+
+
+@pytest.mark.asyncio
+async def test_reprise_snooze_n_ecrase_pas_l_escalade(coordinator):
+    """Après une escalade, la rampe de reprise ne redescend pas le volume :
+    ramper « depuis le volume actuel » (100 %) vers vol_final faisait
+    décroître le volume sans raison."""
+    coordinator.entry.data = {
+        **coordinator.entry.data,
+        "musique_activee": True, "media_player": "media_player.chambre",
+        "volume_final": 0.35, "volume_duree": 5,
+        "notification_activee": False, "lumiere_activee": False,
+    }
+    coordinator.hass.states.set(
+        "media_player.chambre", "playing", {"volume_level": 1.0}
+    )
+    coordinator._reveil_en_cours = True
+    coordinator._statut = "ringing"
+    coordinator._volume_verrouille = True  # l'escalade a déjà déclenché
+
+    # Exécute les tâches créées sur la boucle du test, pas sur celle du mock
+    coordinator.hass.async_create_task = lambda coro: asyncio.create_task(coro)
+
+    await coordinator.snooze()
+    assert coordinator._statut == "snoozed"
+    await coordinator._cancel_snooze  # reprise immédiate (sleep moqué)
+    for tache in coordinator._cancel_rampes:  # rampe de musique relancée
+        if not tache.done():
+            await tache
+
+    appels = [c for c in coordinator.hass.services.calls
+              if c["service"] == "volume_set"]
+    assert appels == [], (
+        "après une escalade, la reprise de snooze ne doit pas réécrire le volume"
+    )
