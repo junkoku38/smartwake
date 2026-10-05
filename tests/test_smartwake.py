@@ -3540,7 +3540,12 @@ def test_service_set_jours_perso_enregistré():
 @pytest.mark.asyncio
 async def test_suggestion_ia_nuit_pas_de_notification(coordinator):
     """Période « ne pas déranger » : aucune suggestion IA ne part une fois
-    l'heure de coucher passée — notifier à 23h réveille la maison."""
+    l'heure de coucher passée — notifier à 23h réveille la maison.
+
+    Régression : le test consultait l'heure réelle de la machine via
+    _periode_dodo(); il ne passait donc qu'entre 21h et minuit, et échouait
+    dans la CI (morning) et sur toute machine exécutant les tests plus tôt.
+    """
     coordinator.entry.data = {
         **coordinator.entry.data,
         "heure_dodo": "21:00",
@@ -3548,12 +3553,42 @@ async def test_suggestion_ia_nuit_pas_de_notification(coordinator):
         "ai_custom_tasks": [],
     }
     coordinator._actif = True
-    with patch.object(coordinator, "_run_ai_suggestion", AsyncMock()) as run, \
+    nuit = patch(
+        "custom_components.smartwake.coordinator.dt_util.now",
+        return_value=datetime(2026, 9, 28, 22, 30),
+    )
+    with nuit, \
+            patch.object(coordinator, "_run_ai_suggestion", AsyncMock()) as run, \
             patch.object(coordinator, "_run_custom_ai", AsyncMock()) as custom:
         coordinator._ai_suggestion_callback(None)
         await asyncio.sleep(0)
     run.assert_not_called()
     custom.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_suggestion_ia_avant_le_dodo_part(coordinator):
+    """Valeur miroir : le soir, avant l'heure de coucher, la suggestion IA
+    doit bien être programmée — le garde « ne pas déranger » ne doit pas la
+    bloquer toute la journée."""
+    coordinator.entry.data = {
+        **coordinator.entry.data,
+        "heure_dodo": "21:00",
+        "ai_suggestion_heure": True,
+        "ai_custom_tasks": [],
+    }
+    coordinator._actif = True
+    soir = patch(
+        "custom_components.smartwake.coordinator.dt_util.now",
+        return_value=datetime(2026, 9, 28, 20, 30),
+    )
+    with soir, \
+            patch.object(coordinator, "_run_ai_suggestion", AsyncMock()) as run, \
+            patch.object(coordinator, "_run_custom_ai", AsyncMock()) as custom:
+        coordinator._ai_suggestion_callback(None)
+        await asyncio.sleep(0)
+    assert run.call_count == 1
+    custom.assert_not_called()  # aucune tâche « on_evening » configurée
 
 
 def test_learning_stats_par_jour():
