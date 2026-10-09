@@ -118,7 +118,7 @@ class ReveilSelect(SelectEntity):
             )
 
     def _handle_update(self, *args) -> None:
-        self.async_write_ha_state()
+        self.hass.add_job(self.async_write_ha_state)
 
 
 class ReveilModeHeureSelect(SelectEntity):
@@ -149,7 +149,7 @@ class ReveilModeHeureSelect(SelectEntity):
         self.async_on_remove(self.coordinator.async_add_listener(self._handle_update))
 
     def _handle_update(self) -> None:
-        self.async_write_ha_state()
+        self.hass.add_job(self.async_write_ha_state)
 
 class ReveilModeTravailSelect(SelectEntity):
     """Mode de travail, pilotable depuis un tableau de bord ou une automatisation.
@@ -215,4 +215,4 @@ class ReveilModeTravailSelect(SelectEntity):
         self.async_on_remove(self.coordinator.async_add_listener(self._handle_update))
 
     def _handle_update(self) -> None:
-        self.async_write_ha_state()
+        self.hass.add_job(self.async_write_ha_state)

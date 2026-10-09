@@ -97,7 +97,7 @@ class _BaseSensor(SensorEntity):
         self.async_on_remove(self.coordinator.async_add_listener(self._handle_update))
 
     def _handle_update(self) -> None:
-        self.async_write_ha_state()
+        self.hass.add_job(self.async_write_ha_state)
 
 
 class ReveilStatutSensor(_BaseSensor):

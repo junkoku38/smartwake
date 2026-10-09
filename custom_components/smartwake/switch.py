@@ -86,7 +86,7 @@ class ReveilSwitch(SwitchEntity, RestoreEntity):
         self.async_on_remove(self.coordinator.async_add_listener(self._handle_update))
 
     def _handle_update(self) -> None:
-        self.async_write_ha_state()
+        self.hass.add_job(self.async_write_ha_state)
 
 
 class ReveilVacancesSwitch(SwitchEntity):
@@ -118,7 +118,7 @@ class ReveilVacancesSwitch(SwitchEntity):
         self.async_on_remove(self.coordinator.async_add_listener(self._handle_update))
 
     def _handle_update(self) -> None:
-        self.async_write_ha_state()
+        self.hass.add_job(self.async_write_ha_state)
 
 
 class ReveilSkipSwitch(SwitchEntity, RestoreEntity):
@@ -156,4 +156,4 @@ class ReveilSkipSwitch(SwitchEntity, RestoreEntity):
         self.async_on_remove(self.coordinator.async_add_listener(self._handle_update))
 
     def _handle_update(self) -> None:
-        self.async_write_ha_state()
+        self.hass.add_job(self.async_write_ha_state)

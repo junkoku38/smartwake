@@ -110,7 +110,7 @@ class _BaseBinary(BinarySensorEntity):
             )
 
     def _handle_update(self, *args, **kwargs) -> None:
-        self.async_write_ha_state()
+        self.hass.add_job(self.async_write_ha_state)
 
 
 class ReveilSonneAujourdhui(_BaseBinary):
