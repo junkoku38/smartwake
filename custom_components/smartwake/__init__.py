@@ -227,6 +227,11 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Configure une instance de réveil."""
+    # Préchauffe le cache de la version via un worker : la lecture du manifest
+    # se fait hors de la boucle, les appels ultérieurs (device_info, etc.)
+    # ne sont plus que des accès mémoire (lru_cache).
+    await hass.async_add_executor_job(integration_version)
+
     device_registry = dr.async_get(hass)
     device_registry.async_get_or_create(
         config_entry_id=entry.entry_id,
